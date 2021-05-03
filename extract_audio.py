@@ -25,5 +25,5 @@ for v in all_vids:
     else:
         # -vn : no video
         # -ar : audio samplerate
-        result = subprocess.Popen(["ffmpeg", "-i", v, "-vn", "-ar", "44100", output_file],stdout=subprocess.PIPE)
+        result = subprocess.Popen(["ffmpeg", "-i", v, "-vn", "-ar", "16000", output_file],stdout=subprocess.PIPE)
         result.wait()

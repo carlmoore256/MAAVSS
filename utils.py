@@ -4,7 +4,7 @@ import urllib.request
 import glob
 
 def get_all_files(base_dir, ext):
-    return glob.glob(f'{base_dir}/*/**.{ext}')
+    return glob.glob(f'{base_dir}/*/**/**.{ext}', recursive=True)
 
 def save_json(out_path, data, indent=3):
   with open(out_path, 'w') as outfile:
