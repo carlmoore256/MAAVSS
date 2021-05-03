@@ -3,6 +3,7 @@ import os
 import utils
 import subprocess
 import glob
+import argparse
 
 
 def download_link(vid_id, directory):
@@ -14,12 +15,19 @@ def download_link(vid_id, directory):
 
 
 if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--dir", type=str, default='./data/raw', help="save directory")
+
+    args = parser.parse_args()
+
     links = utils.load_json("MUSICES.json")
 
     classes = links["videos"]
 
     for k in classes.keys():
-        directory = os.path.join("./data/raw/", k)
+        directory = os.path.join(args.dir, k)
         if not os.path.exists(directory):
             print(f'making directory: {directory}')
             os.makedirs(directory)

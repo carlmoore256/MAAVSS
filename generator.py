@@ -48,7 +48,7 @@ class DataGenerator():
 
         a_clip = audio[sample_start:sample_end]
 
-        return v_clip, fft_clip
+        return v_clip, a_clip
 
     # waveform audio -> FFT (tf.complex64 dtype)
     def fft(self, audio):
@@ -108,7 +108,8 @@ class DataGenerator():
         split_path = os.path.split(vid_path)
         name = split_path[-1][:-4]
         name = name + ".wav"
-        audio_path = os.path.join(split_path[0], "audio/", name)
+        print(os.path.split(split_path[0])[0])
+        audio_path = os.path.join(os.path.split(split_path[0])[0], "audio/", name)
         print(audio_path)
 
         frames = self.load_video(vid_path)
@@ -144,9 +145,9 @@ class DataGenerator():
         a_clip_noise = self.add_noise(a_clip)
         # take fft of audio & convert from rectangular (x + y(i)) into polar (magnitude, phase)
         # added noise
-        ft_polar_x = rectangular_to_polar(self.fft(a_clip_noise))
+        ft_polar_x = self.rectangular_to_polar(self.fft(a_clip_noise))
         # ground truth
-        fft_polar_y = rectangular_to_polar(self.fft(a_clip))
+        fft_polar_y = self.rectangular_to_polar(self.fft(a_clip))
 
         return ft_polar_x, fft_polar_y, v_clip
 
@@ -159,33 +160,55 @@ class DataGenerator():
             if self.example_idx > len(self.all_vids):
                 self.example_idx = 0
 
-            x_ft, y_ft, v_clip = self.gen_xy(frames, audio)
+            x_ft = []
+            y_ft = []
+
+            vid = []
+
+            # x_ft, y_ft, v_clip = self.gen_xy(frames, audio)
 
 
-            x_ft = tf.expand_dims(x_ft, axis=0)
-            x_vid = tf.expand_dims(v_clip, axis=0)
+            # x_ft = tf.expand_dims(x_ft, axis=0)
+            # x_vid = tf.expand_dims(v_clip, axis=0)
 
-            y_ft = tf.expand_dims(y_ft, axis=0)
-            y_vid = tf.expand_dims(v_clip, axis=0)
+            # y_ft = tf.expand_dims(y_ft, axis=0)
+            # y_vid = tf.expand_dims(v_clip, axis=0)
 
             # creates batch on the same video
             for _ in range(self.batch_size - 1):
                 this_x_ft, this_y_ft, this_v_clip = self.gen_xy(frames, audio)
-                
-                x_ft = tf.concat([x_ft, this_x_ft], 0)
-                y_ft = tf.concat([y_ft, this_y_ft], 0)
 
-                x_vid = tf.concat([x_vid, this_v_clip], 0)
-                y_vid = tf.concat([y_vid, this_v_clip], 0)
+                x_ft.append(this_x_ft)
+                y_ft.append(this_y_ft)
+                vid.append(this_v_clip)
+                
+                # x_ft = tf.concat([x_ft, this_x_ft], 0)
+                # y_ft = tf.concat([y_ft, this_y_ft], 0)
+
+                # x_vid = tf.concat([x_vid, this_v_clip], 0)
+                # y_vid = tf.concat([y_vid, this_v_clip], 0)
 
                 # x.append([fft_x, v_clip])
                 # y.append([fft_y, v_clip])
 
-            return [[x_ft, x_vid], [y_ft, y_vid]] 
+            x_ft = tf.convert_to_tensor(x_ft)
+            y_ft = tf.convert_to_tensor(y_ft)
+            vid = tf.convert_to_tensor(vid)
+
+            return [[x_ft, vid], [y_ft, vid]]
+            # return [[x_ft, x_vid], [y_ft, y_vid]] 
 
             # x = np.asarray(x)
             # y = np.asarray(y)
 
 if __name__ == "__main__":
-    print("remove me")
-    # dg = DataGenerator(32)
+    dg = DataGenerator(
+    batch_size = 4,
+    num_vid_frames = 4,
+    framerate = 30,
+    samplerate = 16000,
+    data_path = "./data/raw"
+    )
+    gen = dg.generator()
+
+    print(next(gen))
