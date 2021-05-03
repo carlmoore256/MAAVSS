@@ -8,7 +8,16 @@ import numpy as np
 class DataGenerator():
 
     # num vid frames -> how many video frames to extract flow data from, size of 4D tensor
-    def __init__(self, batch_size, num_vid_frames=4, framerate=30, samplerate=16000, max_vid_frames=100, center_fft=True, use_polar=True, data_path="./data/raw"):
+    def __init__(self, 
+                 batch_size, 
+                 num_vid_frames=4, 
+                 framerate=30, 
+                 samplerate=16000, 
+                 max_vid_frames=100, 
+                 center_fft=True, 
+                 use_polar=True, 
+                 shuffle_files=True, 
+                 data_path="./data/raw"):
 
         assert batch_size > 1
         
@@ -22,12 +31,11 @@ class DataGenerator():
 
         self.normalize_input_fft = False
 
-        # largest power of 2 that fits
         self.fft_len = int((self.num_vid_frames/self.framerate) * self.samplerate)
-        print(f'fft length {self.fft_len}')
 
         self.all_vids = utils.get_all_files(data_path, "mp4")
-        self.all_audio = utils.get_all_files(data_path, "wav")
+        print(f'number of videos found: {len(self.all_vids)}')
+
         self.current_av_pair = self.load_example_pair(self.all_vids[0])
 
         self.example_idx = 0
@@ -81,7 +89,6 @@ class DataGenerator():
 
     # x + y(i) -> magnitude, angle (cartesian to polar)
     def cartesian_to_polar(self, cartesian, concat_axis=0):
-        print(f'incoming cart {cartesian.shape}')
         magnitude = tf.abs(cartesian)
         angle = tf.math.angle(cartesian)
         print(magnitude.shape)
@@ -135,7 +142,6 @@ class DataGenerator():
     # reverse process of center_data()
     # un-mirrors and de-interlaces fft_tensors
     def decenter_fft_bins(self, fft_tensor):
-        print(f'decentering - shape {fft_tensor.shape}')
         de_interlaced = np.zeros_like(fft_tensor)
         left = fft_tensor[:, :, :fft_tensor.shape[-1]//2]
         right = fft_tensor[:, :, fft_tensor.shape[-1]//2:]
@@ -146,10 +152,8 @@ class DataGenerator():
 
 
     def reverse_process_fft(self, fft_tensor):
-      print(f'fft tensor sh {fft_tensor.shape}')
       if self.use_polar:
         fft_tensor = self.polar_to_cartesian(fft_tensor)
-      print(f'fft tensor sh {fft_tensor.shape}')
 
       # this step must be done after pol_to_car
       if self.center_fft:
@@ -157,27 +161,23 @@ class DataGenerator():
         fft_tensor = self.decenter_fft_bins(fft_tensor)
       
       fft_tensor = self.ri_to_complex(fft_tensor)
-
       return fft_tensor
-
 
     # load audio and video exaple pair
     def load_example_pair(self, vid_path):
-
-        split_path = os.path.split(vid_path)
-        name = split_path[-1][:-4]
-        name = name + ".wav"
-        print(os.path.split(split_path[0])[0])
-        audio_path = os.path.join(os.path.split(split_path[0])[0], "audio/", name)
-        print(audio_path)
-
-        frames = self.load_video(vid_path)
-        audio = self.load_audio(audio_path, int(self.samplerate * (self.max_vid_frames/self.framerate)))
-
-        print(f'FRAMES SHAPE {frames.shape}')
-        print(f'AUDIO SHAPE {audio.shape}')
-
-        return frames, audio
+      while True:
+        try:
+          split_path = os.path.split(vid_path)
+          name = split_path[-1][:-4]
+          name = name + ".wav"
+          audio_path = os.path.join(os.path.split(split_path[0])[0], "audio/", name)
+          frames = self.load_video(vid_path)
+          audio = self.load_audio(audio_path, int(self.samplerate * (self.max_vid_frames/self.framerate)))
+          print(f'FRAMES SHAPE {frames.shape}')
+          print(f'AUDIO SHAPE {audio.shape}')
+          return frames, audio
+        except:
+          print("error loading audio and video pair, moving to next...")
 
     def load_video(self, path):
         cap = cv2.VideoCapture(path)
@@ -240,17 +240,7 @@ class DataGenerator():
 
             x_ft = []
             y_ft = []
-
             vid = []
-
-            # x_ft, y_ft, v_clip = self.gen_xy(frames, audio)
-
-
-            # x_ft = tf.expand_dims(x_ft, axis=0)
-            # x_vid = tf.expand_dims(v_clip, axis=0)
-
-            # y_ft = tf.expand_dims(y_ft, axis=0)
-            # y_vid = tf.expand_dims(v_clip, axis=0)
 
             # creates batch on the same video
             for _ in range(self.batch_size):
@@ -262,15 +252,6 @@ class DataGenerator():
                 y_ft.append(this_y_ft)
                 vid.append(this_v_clip)
                 
-                # x_ft = tf.concat([x_ft, this_x_ft], 0)
-                # y_ft = tf.concat([y_ft, this_y_ft], 0)
-
-                # x_vid = tf.concat([x_vid, this_v_clip], 0)
-                # y_vid = tf.concat([y_vid, this_v_clip], 0)
-
-                # x.append([fft_x, v_clip])
-                # y.append([fft_y, v_clip])
-
             x_ft = tf.convert_to_tensor(x_ft)
             y_ft = tf.convert_to_tensor(y_ft)
 
