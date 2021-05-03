@@ -4,6 +4,7 @@ import cv2
 import glob
 import os
 import numpy as np
+import random
 
 class DataGenerator():
 
@@ -13,7 +14,8 @@ class DataGenerator():
                  num_vid_frames=4, 
                  framerate=30, 
                  samplerate=16000, 
-                 max_vid_frames=100, 
+                 max_vid_frames=100,
+                 noise_std=0.01,
                  center_fft=True, 
                  use_polar=True, 
                  shuffle_files=True, 
@@ -27,7 +29,7 @@ class DataGenerator():
         self.framerate = framerate
         self.samplerate = samplerate
 
-        self.noise_stddev = 0.05
+        self.noise_std = noise_std
 
         self.normalize_input_fft = False
 
@@ -36,7 +38,10 @@ class DataGenerator():
         self.all_vids = utils.get_all_files(data_path, "mp4")
         print(f'number of videos found: {len(self.all_vids)}')
 
-        self.current_av_pair = self.load_example_pair(self.all_vids[0])
+        if shuffle_files:
+          random.shuffle(self.all_vids)
+
+        # self.current_av_pair = self.load_example_pair(self.all_vids[0])
 
         self.example_idx = 0
         self.center_fft = center_fft
@@ -44,7 +49,7 @@ class DataGenerator():
 
 
     def add_noise(self, audio):
-        noise = tf.random.normal(audio.shape, mean=0.0, stddev=self.noise_stddev, dtype=tf.dtypes.float32)
+        noise = tf.random.normal(audio.shape, mean=0.0, stddev=self.noise_std, dtype=tf.dtypes.float32)
         a_noise = tf.math.add(audio, noise)
         return a_noise
 
@@ -68,7 +73,6 @@ class DataGenerator():
         fft = tf.signal.fft(tf.transpose(audio))
         if self.normalize_input_fft:
             fft = self.normalize_fft(fft)
-
         # fft = tf.transpose(fft)
         fft = fft[:, :fft.shape[-1]//2]
         return fft
@@ -91,8 +95,6 @@ class DataGenerator():
     def cartesian_to_polar(self, cartesian, concat_axis=0):
         magnitude = tf.abs(cartesian)
         angle = tf.math.angle(cartesian)
-        print(magnitude.shape)
-        print(angle.shape)
         polar = tf.concat([magnitude, angle], axis=concat_axis)
         return polar
 
@@ -101,7 +103,6 @@ class DataGenerator():
     def polar_to_cartesian(self, polar):
         real = polar[:, 0:1, :] * np.sin(polar[:, 1:, :])
         imag = polar[:, 0:1, :] * np.cos(polar[:, 1:, :])
-
         ri_t = tf.concat([real, imag], axis=1)
         # complex_t = tf.dtypes.complex(real, imag)
         return ri_t
@@ -126,7 +127,6 @@ class DataGenerator():
         complex_t = tf.dtypes.complex(real, imag)
         return complex_t
 
-
     # center fft by interlacing freqs and concatenating mirror
     # this may improve training, with more information density towards the center of the vector,
     # and not to the sides, where convolution artifacts occur, and network density reduces
@@ -149,7 +149,6 @@ class DataGenerator():
         de_interlaced[:, :, ::2] = left
         de_interlaced[:, :, 1::2] = right
         return de_interlaced
-
 
     def reverse_process_fft(self, fft_tensor):
       if self.use_polar:
@@ -195,7 +194,6 @@ class DataGenerator():
         cap.release()
         # frames = tf.convert_to_tensor(frames)
         frames = np.asarray(frames)
-        print("\n LOADED VID \n")
         return frames
 
     def load_audio(self, path, length=-1):
@@ -207,26 +205,8 @@ class DataGenerator():
     def gen_xy(self, frames, audio):
         v_clip, a_clip = self.get_random_clip(frames, audio)
         a_clip_noise = self.add_noise(a_clip)
-        # take fft of audio & convert from cartesian (x + y(i)) into polar (magnitude, phase)
-
         ft_x = self.fft(a_clip_noise)
         ft_y = self.fft(a_clip)
-
-        # ft_x = ft_x[:, :ft_x.shape[1]//2]
-        # ft_y = ft_y[:, :ft_y.shape[1]//2]
-
-        # ft_x = self.complex_to_ri(ft_x)
-        # ft_y = self.complex_to_ri(ft_y)
-
-        # if self.center_fft:
-        #   ft_x = self.center_fft_bins(ft_x)
-        #   ft_y = self.center_fft_bins(ft_y)
-
-        # # added noise
-        # ft_polar_x = self.cartesian_to_polar(ft_x)
-        # # ground truth
-        # fft_polar_y = self.cartesian_to_polar(ft_y)
-
         return ft_x, ft_y, v_clip
 
     def generator(self):
@@ -245,9 +225,6 @@ class DataGenerator():
             # creates batch on the same video
             for _ in range(self.batch_size):
                 this_x_ft, this_y_ft, this_v_clip = self.gen_xy(frames, audio)
-
-                print(f'this_x_ft {this_x_ft.shape} this_y_ft {this_y_ft.shape} vclip {this_v_clip.shape}')
-
                 x_ft.append(this_x_ft)
                 y_ft.append(this_y_ft)
                 vid.append(this_v_clip)
