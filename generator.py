@@ -19,7 +19,7 @@ class DataGenerator():
 
         self.noise_stddev = 1.0
 
-        self.normalize_fft = True
+        self.normalize_input_fft = True
 
         # largest power of 2 that fits
         # self.spectrogram_len = 
@@ -54,7 +54,7 @@ class DataGenerator():
     def fft(self, audio):
         audio = tf.cast(audio, dtype=tf.complex64)
         fft = tf.signal.fft(audio)
-        if self.normalize:
+        if self.normalize_input_fft:
             fft = self.normalize_fft(fft)
         return fft
 
