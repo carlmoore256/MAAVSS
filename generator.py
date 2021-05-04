@@ -12,7 +12,8 @@ class DataGenerator():
     def __init__(self, 
                  batch_size, 
                  num_vid_frames=4, 
-                 framerate=30, 
+                 framerate=30,
+                 framesize=256,
                  samplerate=16000, 
                  max_vid_frames=100,
                  noise_std=0.01,
@@ -27,6 +28,7 @@ class DataGenerator():
         self.batch_size = batch_size
         self.num_vid_frames = num_vid_frames
         self.framerate = framerate
+        self.framesize = framesize
         self.samplerate = samplerate
 
         self.noise_std = noise_std
@@ -48,24 +50,6 @@ class DataGenerator():
         self.use_polar = use_polar
 
 
-    def add_noise(self, audio):
-        noise = tf.random.normal(audio.shape, mean=0.0, stddev=self.noise_std, dtype=tf.dtypes.float32)
-        a_noise = tf.math.add(audio, noise)
-        return a_noise
-
-    # returns a random num_vid_frames frames from video, returns FFT and vid
-    def get_random_clip(self, frames, audio):
-        frame_start = np.random.randint(0, frames.shape[0]-self.num_vid_frames-1)
-        frame_end = frame_start+self.num_vid_frames
-
-        v_clip = frames[frame_start:frame_end]
-
-        sample_start = int((frame_start/self.framerate) * self.samplerate)
-        sample_end = sample_start + self.fft_len
-
-        a_clip = audio[sample_start:sample_end]
-
-        return v_clip, a_clip
 
     # waveform audio -> FFT (tf.complex64 dtype)
     def fft(self, audio):
@@ -184,15 +168,15 @@ class DataGenerator():
         i = 0
 
         while(cap.isOpened()):
+            if i >= self.max_vid_frames:
+              break
             ret, frame = cap.read()
+            frame = cv2.resize(frame, (self.framesize, self.framesize))
             frames.append(frame)
             if ret is False:
               break
-            if i > self.max_vid_frames:
-              break
             i += 1
         cap.release()
-        # frames = tf.convert_to_tensor(frames)
         frames = np.asarray(frames)
         return frames
 
@@ -200,6 +184,21 @@ class DataGenerator():
         raw_audio = tf.io.read_file(path)
         waveform = tf.audio.decode_wav(raw_audio, desired_channels=1, desired_samples=length)
         return waveform[0]
+
+    def add_noise(self, audio):
+        noise = tf.random.normal(audio.shape, mean=0.0, stddev=self.noise_std, dtype=tf.dtypes.float32)
+        a_noise = tf.math.add(audio, noise)
+        return a_noise
+
+    # returns a random num_vid_frames frames from video, returns FFT and vid
+    def get_random_clip(self, frames, audio):
+        frame_start = np.random.randint(0, frames.shape[0]-self.num_vid_frames-1)
+        frame_end = frame_start+self.num_vid_frames
+        v_clip = frames[frame_start:frame_end]
+        sample_start = int((frame_start/self.framerate) * self.samplerate)
+        sample_end = sample_start + self.fft_len
+        a_clip = audio[sample_start:sample_end]
+        return v_clip, a_clip
 
     # main process for generating x,y pairs
     def gen_xy(self, frames, audio):
@@ -244,5 +243,7 @@ class DataGenerator():
               y_ft = self.center_fft_bins(y_ft)
 
             vid = tf.convert_to_tensor(vid)
-
+            vid = tf.cast(vid, dtype=tf.float32)
+            vid /= 255.
+            
             yield [[x_ft, vid], [y_ft, vid]]
