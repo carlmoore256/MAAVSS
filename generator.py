@@ -5,6 +5,7 @@ import glob
 import os
 import numpy as np
 import random
+from video_attention import VideoAttention
 
 class DataGenerator():
 
@@ -23,6 +24,8 @@ class DataGenerator():
                  data_path="./data/raw"):
 
         assert batch_size > 1
+
+        self.attention_extractor = VideoAttention()
         
         self.max_vid_frames = max_vid_frames
         self.batch_size = batch_size
@@ -203,6 +206,10 @@ class DataGenerator():
     # main process for generating x,y pairs
     def gen_xy(self, frames, audio):
         v_clip, a_clip = self.get_random_clip(frames, audio)
+
+        # USE ATTENTION MODEL TO EXTRACT ATTENTION HEATMAP
+        v_clip = self.attention_extractor._inference(v_clip)
+
         a_clip_noise = self.add_noise(a_clip)
         ft_x = self.fft(a_clip_noise)
         ft_y = self.fft(a_clip)
