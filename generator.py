@@ -209,6 +209,7 @@ class DataGenerator():
 
         # USE ATTENTION MODEL TO EXTRACT ATTENTION HEATMAP
         v_clip = self.attention_extractor._inference(v_clip)
+        v_clip = tf.expand_dims(v_clip, -1)
 
         a_clip_noise = self.add_noise(a_clip)
         ft_x = self.fft(a_clip_noise)
@@ -229,11 +230,12 @@ class DataGenerator():
             vid = []
 
             # creates batch on the same video
-            for _ in range(self.batch_size):
-                this_x_ft, this_y_ft, this_v_clip = self.gen_xy(frames, audio)
-                x_ft.append(this_x_ft)
-                y_ft.append(this_y_ft)
-                vid.append(this_v_clip)
+            for i in range(self.batch_size):
+              print(f"generating batch {i} / {self.batch_size}")
+              this_x_ft, this_y_ft, this_v_clip = self.gen_xy(frames, audio)
+              x_ft.append(this_x_ft)
+              y_ft.append(this_y_ft)
+              vid.append(this_v_clip)
                 
             x_ft = tf.convert_to_tensor(x_ft)
             y_ft = tf.convert_to_tensor(y_ft)
@@ -252,5 +254,7 @@ class DataGenerator():
             vid = tf.convert_to_tensor(vid)
             vid = tf.cast(vid, dtype=tf.float32)
             vid /= 255.
+
+            print(f"x ft {x_ft.shape} y ft {y_ft.shape} vid {vid.shape}")
             
             yield [[x_ft, vid], [y_ft, vid]]

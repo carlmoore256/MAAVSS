@@ -1,23 +1,28 @@
 import tensorflow as tf
 from tensorflow.keras.losses import CosineSimilarity, MeanSquaredError
 
-video_loss = MeanSquaredError()
-fft_loss = CosineSimilarity()
 
+class TrainLoop():
 
-def grad(model, inputs, targets):
-  with tf.GradientTape() as tape:
-    ya, yv = model(inputs, training=True)
+  def __init__(self, model, optimizer):
+    self.video_loss = MeanSquaredError()
+    self.fft_loss = CosineSimilarity()
+    self.optimizer = optimizer
+    self.model = model
 
-    a_loss = fft_loss(ya, targets[0])
-    v_loss = video_loss(yv, targets[1])
+  def grad(self, model, inputs, targets):
+    with tf.GradientTape() as tape:
+      ya, yv = self.model(inputs, training=True)
 
-    losses = [a_loss, v_loss]
+      a_loss = self.fft_loss(ya, targets[0])
+      v_loss = self.video_loss(yv, targets[1])
 
-  return losses, tape.gradient(losses, model.trainable_variables)
+      losses = [a_loss, v_loss]
 
-def train_step(gen, optimizer):
-    x, y = next(gen)
-    losses, grads = grad(model, x, y)
-    optimizer.apply_gradients(zip(grads, model.trainable_variables))
-    print(f'fft loss {losses[0]} video loss {losses[1]}')
+    return losses, tape.gradient(losses, self.model.trainable_variables)
+
+  def train_step(self, gen):
+      x, y = next(gen)
+      losses, grads = self.grad(self.model, x, y)
+      self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
+      print(f'fft loss {losses[0]} video loss {losses[1]}')

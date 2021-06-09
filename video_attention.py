@@ -20,21 +20,30 @@ DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cp
 
 
 class VideoAttention:
-    def __init__(self, resize=None):
+    def __init__(self,
+                 patch_size=8, # Patch resolution of the self.model
+                 threshold = 0.6,# masks obtained by thresh self-attention maps to keep xx percent of the mass
+                 path_to_weights="dino_deitsmall8_pretrain.pth", # path to the pretrained weights avail at https://github.com/facebookresearch/dino
+                 architecture="vit_small", # ["vit_tiny", "vit_small", "vit_base"]
+                 resize=None):
         self.resize = resize
-        self.model = self.__load_model()
+        self.threshold = threshold
+        self.patch_size = patch_size
+        self.checkpoint_key = "teacher" # Key to use in the checkpoint (example: "teacher")
+        self.model = self.__load_model(architecture, path_to_weights)
+        
 
     def _inference(self, frames):
 
         attn_frames = []
 
-        for i, img in enumerate(frames):
+        for img in frames:
 
             if self.resize is not None:
                 transform = pth_transforms.Compose(
                     [
                         pth_transforms.ToTensor(),
-                        pth_transforms.Resize(self.args.resize),
+                        pth_transforms.Resize(self.resize),
                         pth_transforms.Normalize(
                             (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
                         ),
@@ -54,13 +63,13 @@ class VideoAttention:
 
             # make the image divisible by the patch size
             w, h = (
-                img.shape[1] - img.shape[1] % self.args.patch_size,
-                img.shape[2] - img.shape[2] % self.args.patch_size,
+                img.shape[1] - img.shape[1] % self.patch_size,
+                img.shape[2] - img.shape[2] % self.patch_size,
             )
             img = img[:, :w, :h].unsqueeze(0)
 
-            w_featmap = img.shape[-2] // self.args.patch_size
-            h_featmap = img.shape[-1] // self.args.patch_size
+            w_featmap = img.shape[-2] // self.patch_size
+            h_featmap = img.shape[-1] // self.patch_size
 
             attentions = self.model.get_last_selfattention(img.to(DEVICE))
 
@@ -73,7 +82,7 @@ class VideoAttention:
             val, idx = torch.sort(attentions)
             val /= torch.sum(val, dim=1, keepdim=True)
             cumval = torch.cumsum(val, dim=1)
-            th_attn = cumval > (1 - self.args.threshold)
+            th_attn = cumval > (1 - self.threshold)
             idx2 = torch.argsort(idx)
             for head in range(nh):
                 th_attn[head] = th_attn[head][idx2[head]]
@@ -82,7 +91,7 @@ class VideoAttention:
             th_attn = (
                 nn.functional.interpolate(
                     th_attn.unsqueeze(0),
-                    scale_factor=self.args.patch_size,
+                    scale_factor=self.patch_size,
                     mode="nearest",
                 )[0]
                 .cpu()
@@ -93,7 +102,7 @@ class VideoAttention:
             attentions = (
                 nn.functional.interpolate(
                     attentions.unsqueeze(0),
-                    scale_factor=self.args.patch_size,
+                    scale_factor=self.patch_size,
                     mode="nearest",
                 )[0]
                 .cpu()
@@ -104,38 +113,36 @@ class VideoAttention:
 
             attn_frames.append(output_frame)
 
-            print(f"processed attention frame {i}/{len(frames)}")
-
         return attn_frames
 
 
-    def __load_model(self):
+    def __load_model(self, arch, pretrained_weights):
         # build model
-        model = vits.__dict__[self.args.arch](
-            patch_size=self.args.patch_size, num_classes=0
+        model = vits.__dict__[arch](
+            patch_size=self.patch_size, num_classes=0
         )
         for p in model.parameters():
             p.requires_grad = False
         model.eval()
         model.to(DEVICE)
 
-        if os.path.isfile(self.args.pretrained_weights):
-            state_dict = torch.load(self.args.pretrained_weights, map_location="cpu")
+        if os.path.isfile(pretrained_weights):
+            state_dict = torch.load(pretrained_weights, map_location="cpu")
             if (
-                self.args.checkpoint_key is not None
-                and self.args.checkpoint_key in state_dict
+                self.checkpoint_key is not None
+                and self.checkpoint_key in state_dict
             ):
                 print(
-                    f"Take key {self.args.checkpoint_key} in provided checkpoint dict"
+                    f"Take key {self.checkpoint_key} in provided checkpoint dict"
                 )
-                state_dict = state_dict[self.args.checkpoint_key]
+                state_dict = state_dict[self.checkpoint_key]
             state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
             # remove `backbone.` prefix induced by multicrop wrapper
             state_dict = {k.replace("backbone.", ""): v for k, v in state_dict.items()}
             msg = model.load_state_dict(state_dict, strict=False)
             print(
                 "Pretrained weights found at {} and loaded with msg: {}".format(
-                    self.args.pretrained_weights, msg
+                    pretrained_weights, msg
                 )
             )
         else:
@@ -143,13 +150,13 @@ class VideoAttention:
                 "Please use the `--pretrained_weights` argument to indicate the path of the checkpoint to evaluate."
             )
             url = None
-            if self.args.arch == "vit_small" and self.args.patch_size == 16:
+            if arch == "vit_small" and self.patch_size == 16:
                 url = "dino_deitsmall16_pretrain/dino_deitsmall16_pretrain.pth"
-            elif self.args.arch == "vit_small" and self.args.patch_size == 8:
+            elif arch == "vit_small" and self.patch_size == 8:
                 url = "dino_deitsmall8_300ep_pretrain/dino_deitsmall8_300ep_pretrain.pth"  # model used for visualizations in our paper
-            elif self.args.arch == "vit_base" and self.args.patch_size == 16:
+            elif arch == "vit_base" and self.patch_size == 16:
                 url = "dino_vitbase16_pretrain/dino_vitbase16_pretrain.pth"
-            elif self.args.arch == "vit_base" and self.args.patch_size == 8:
+            elif arch == "vit_base" and self.patch_size == 8:
                 url = "dino_vitbase8_pretrain/dino_vitbase8_pretrain.pth"
             if url is not None:
                 print(
@@ -164,10 +171,3 @@ class VideoAttention:
                     "There is no reference weights available for this model => We use random weights."
                 )
         return model
-
-
-# if __name__ == "__main__":
-#     args = parse_args()
-
-#     vg = VideoGenerator(args)
-#     vg.run()
