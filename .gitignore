@@ -1,4 +1,6 @@
 data/
 _pycache_/
+env/
+*.pth
 interactive-main.ipynb
 notes.txt
