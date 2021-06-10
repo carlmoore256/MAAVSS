@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 import torchvision
 from torchvision import transforms as pth_transforms
-# import numpy as np
+import numpy as np
 
 import dino.utils
 import dino.vision_transformer as vits
@@ -35,32 +35,29 @@ class VideoAttention:
 
     def _inference(self, frames):
 
+        # attn_frames = np.zeros((frames.shape[0], frames.shape[1], frames.shape[2]))
+        # attn_frames = torch.zeros((frames.shape[0], frames.shape[1], frames.shape[2]))
+        # attn_frames = attn_frames.to(DEVICE)
         attn_frames = []
 
-        for img in frames:
+        print(f" FRAMES SHAPPPPPEPEEE!!!! {frames.shape}")
+        frames = torch.swapaxes(frames, -1, -3)
+        print(f" FRAMES SHAPPPPPEPEEE!!!! {frames.shape}")
 
-            if self.resize is not None:
-                transform = pth_transforms.Compose(
-                    [
-                        pth_transforms.ToTensor(),
-                        pth_transforms.Resize(self.resize),
-                        pth_transforms.Normalize(
-                            (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
-                        ),
-                    ]
-                )
-            else:
-                transform = pth_transforms.Compose(
-                    [
-                        pth_transforms.ToTensor(),
-                        pth_transforms.Normalize(
-                            (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
-                        ),
-                    ]
-                )
+        frames = frames.type(torch.float)
 
-            img = transform(img)
+        transform = pth_transforms.Compose(
+            [
+                # pth_transforms.Resize(self.resize),
+                pth_transforms.Normalize(
+                    (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
+                ),
+            ]
+        )
 
+        frames = transform(frames)
+
+        for idx, img in enumerate(frames):
             # make the image divisible by the patch size
             w, h = (
                 img.shape[1] - img.shape[1] % self.patch_size,
@@ -84,8 +81,12 @@ class VideoAttention:
             cumval = torch.cumsum(val, dim=1)
             th_attn = cumval > (1 - self.threshold)
             idx2 = torch.argsort(idx)
+
+
+
             for head in range(nh):
                 th_attn[head] = th_attn[head][idx2[head]]
+                
             th_attn = th_attn.reshape(nh, w_featmap, h_featmap).float()
             # interpolate
             th_attn = (
@@ -108,11 +109,15 @@ class VideoAttention:
                 .cpu()
                 .numpy()
             )
-
+            
             output_frame = sum(attentions[i] * 1 / attentions.shape[0] for i in range(attentions.shape[0]))
 
             attn_frames.append(output_frame)
+            # attn_frames[idx, :, :] = torch.as_tensor(output_frame).to(DEVICE)
+            # attn_frames.append(output_frame)
 
+        attn_frames = np.asarray(attn_frames)
+        attn_frames = torch.as_tensor(attn_frames)
         return attn_frames
 
 

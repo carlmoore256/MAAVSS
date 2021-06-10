@@ -43,7 +43,6 @@ class DataGenerator():
         self.fft_len = int((self.num_vid_frames/self.framerate) * self.samplerate)
 
         self.all_vids = utils.get_all_files(data_path, "mp4")
-        print(len(self.all_vids))
         print(f"number of videos found: {len(self.all_vids)}")
 
         if shuffle_files:
@@ -143,7 +142,6 @@ class DataGenerator():
         # fft_tensor = self.complex_to_ri(fft_tensor)
         fft_tensor = self.decenter_fft_bins(fft_tensor)
       
-      print(f"REV PROCESS fft_tensor sh {fft_tensor.shape}")
       fft_tensor = self.ri_to_complex(fft_tensor)
       return fft_tensor
 
@@ -221,7 +219,7 @@ class DataGenerator():
 
             vid = torch.cat([torch.unsqueeze(frames[index[0]:index[1], :, :], 0) for index in frame_idxs], dim=0)
 
-            vid = torch.cat([self.attention_extractor._inference(clip) for clip in vid].as_tensor, dim=0)
+            vid = torch.cat([self.attention_extractor._inference(clip) for clip in vid], dim=0)
 
             vid = vid.type(torch.float) / 255.
 

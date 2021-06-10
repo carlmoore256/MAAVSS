@@ -5,7 +5,7 @@ from tensorflow.keras.optimizers import Adam
 from generator import DataGenerator
 
 learning_rate = 1e-5
-batch_size = 2
+batch_size = 4
 num_vid_frames = 4
 epochs = 100
 
@@ -19,7 +19,7 @@ dg = DataGenerator(
     max_vid_frames=100,
     noise_std=0.01,
     center_fft=True, 
-    use_polar=True, 
+    use_polar=False, 
     shuffle_files=True, 
     data_path = "data/processed"
 )
