@@ -39,11 +39,7 @@ class VideoAttention:
         # attn_frames = torch.zeros((frames.shape[0], frames.shape[1], frames.shape[2]))
         # attn_frames = attn_frames.to(DEVICE)
         attn_frames = []
-
-        print(f" FRAMES SHAPPPPPEPEEE!!!! {frames.shape}")
         frames = torch.swapaxes(frames, -1, -3)
-        print(f" FRAMES SHAPPPPPEPEEE!!!! {frames.shape}")
-
         frames = frames.type(torch.float)
 
         transform = pth_transforms.Compose(

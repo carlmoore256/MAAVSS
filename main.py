@@ -27,6 +27,8 @@ dg = DataGenerator(
 gen = dg.generator()
 x_example, y_example = next(gen)
 
+print(f"x examp sh {x_example[0].shape} {x_example[1].shape}")
+
 in_1_shape = x_example[0][0].shape
 in_2_shape = x_example[1][0].shape
 
