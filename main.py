@@ -5,14 +5,16 @@ from tensorflow.keras.optimizers import Adam
 from generator import DataGenerator
 
 learning_rate = 1e-5
-batch_size = 8
+batch_size = 2
 num_vid_frames = 4
-epochs = 10000
+epochs = 100
+
 
 dg = DataGenerator(
     batch_size = batch_size,
     num_vid_frames=num_vid_frames, 
     framerate=30,
+    framesize=256,
     samplerate=16000, 
     max_vid_frames=100,
     noise_std=0.01,
@@ -34,7 +36,8 @@ out_2_shape = y_example[1][0].shape
 model = avse_model.build_model(in_1_shape, in_2_shape, out_1_shape, out_2_shape)
 model.summary()
 
-trainLoop = TrainLoop(model, optimizer=Adam(learning_rate=learning_rate))
+trainLoop = TrainLoop(optimizer=Adam(learning_rate=learning_rate))
 
 for i in range(epochs):
-    trainLoop.train_step(gen)
+    print(f"EPOCH {i}")
+    trainLoop.train_step(gen, model)

@@ -12,14 +12,14 @@ def build_model(in_1_shape, in_2_shape, out_1_shape, out_2_shape, padding="same"
     input_a = Input(shape=in_1_shape, name="audio-input")
     input_v = Input(shape=in_2_shape, name="video-input")
 
-    an_0 = Conv1D(10, kernel_size=(12), activation="linear", padding=padding)(input_a)
+    an_0 = Conv1D(10, kernel_size=(9), activation="linear", padding=padding)(input_a)
     an_0 = AveragePooling1D(pool_size=2)(an_0)
     an_1 = Conv1D(4, kernel_size=5, activation="linear", padding=padding)(an_0)
 
 
-    vn_0 = Conv3D(12, 15, strides=(1,2,2), padding=padding)(input_v)
-    vn_1 = Conv3D(12, 15, strides=(2,2,2), padding=padding)(vn_0)
-    vn_2 = Conv3D(10, 15, strides=(2,2,2), padding=padding)(vn_1)
+    vn_0 = Conv3D(12, 9, strides=(1,2,2), padding=padding)(input_v)
+    vn_1 = Conv3D(12, 9, strides=(2,2,2), padding=padding)(vn_0)
+    vn_2 = Conv3D(10, 9, strides=(2,2,2), padding=padding)(vn_1)
     vn_3 = Conv3D(6, 7, strides=(2,2,2), padding=padding)(vn_2)
     vn_4 = Conv3D(4, 5, strides=(2,2,2), padding=padding)(vn_3)
     vn_5 = Conv3D(2, 5, strides=(2,2,2), padding=padding)(vn_4)
@@ -38,7 +38,7 @@ def build_model(in_1_shape, in_2_shape, out_1_shape, out_2_shape, padding="same"
     CoutV1 = Reshape((1, 16, 32, 1))(FC2)
     CoutV1 = Conv3D(8, kernel_size=5, padding=padding)(CoutV1)
     CoutV1 = UpSampling3D(size=(2,4,2))(CoutV1)
-    CoutV2 = Conv3D(10, kernel_size=7, padding=padding)(CoutV1)
+    CoutV2 = Conv3D(10, kernel_size=5, padding=padding)(CoutV1)
     CoutV2 = UpSampling3D(size=(2,4,4))(CoutV2)
     CoutV3 = Conv3D(3, kernel_size=3, padding=padding)(CoutV2)
 
