@@ -1,8 +1,12 @@
-import avse_model
+# import avse_model
+from avse_model import AVSE_Model
 from train import TrainLoop
-import tensorflow as tf
-from tensorflow.keras.optimizers import Adam
+import torch
 from generator import DataGenerator
+import matplotlib.pyplot as plt
+
+DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
 
 learning_rate = 1e-5
 batch_size = 4
@@ -27,7 +31,8 @@ dg = DataGenerator(
 gen = dg.generator()
 x_example, y_example = next(gen)
 
-print(f"x examp sh {x_example[0].shape} {x_example[1].shape}")
+print(f"\n x examp sh {x_example[0].shape} {x_example[1].shape} \n")
+
 
 in_1_shape = x_example[0][0].shape
 in_2_shape = x_example[1][0].shape
@@ -35,11 +40,37 @@ in_2_shape = x_example[1][0].shape
 out_1_shape = y_example[0][0].shape
 out_2_shape = y_example[1][0].shape
 
-model = avse_model.build_model(in_1_shape, in_2_shape, out_1_shape, out_2_shape)
-model.summary()
+# model = avse_model.build_model(in_1_shape, in_2_shape, out_1_shape, out_2_shape)
+# model.summary()
 
-trainLoop = TrainLoop(optimizer=Adam(learning_rate=learning_rate))
+model = AVSE_Model().to(DEVICE)
+print(model)
+
+mse_loss = torch.nn.MSELoss()
+cosine_loss = torch.nn.CosineSimilarity()
+optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+losses = []
 
 for i in range(epochs):
-    print(f"EPOCH {i}")
-    trainLoop.train_step(gen, model)
+    optimizer.zero_grad()
+
+    x, y = next(gen)
+
+    yh_a, yh_v = model(x[0], x[1])
+
+    a_loss = cosine_loss(yh_a, y[0])
+    v_loss = mse_loss(yh_v, y[1])
+
+    a_loss.backward()
+    v_loss.backward()
+
+    optimizer.step()
+
+    print(f"step:{i} a_loss:{a_loss} v_loss:{v_loss}")
+
+
+# trainLoop = TrainLoop(optimizer=Adam(learning_rate=learning_rate))
+
+# for i in range(epochs):
+#     print(f"EPOCH {i}")
+#     trainLoop.train_step(gen, model)

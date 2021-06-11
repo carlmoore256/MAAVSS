@@ -158,8 +158,8 @@ class DataGenerator():
           audio = self.load_audio(audio_path, int(self.samplerate * (self.max_vid_frames/self.framerate)))
           frames = torch.as_tensor(frames)
           audio = torch.as_tensor(audio)
-          print(f'FRAMES SHAPE {frames.shape}')
-          print(f'AUDIO SHAPE {audio.shape}')
+          # print(f'FRAMES SHAPE {frames.shape}')
+          # print(f'AUDIO SHAPE {audio.shape}')
           return frames, audio
         except:
           print("error loading audio and video pair, moving to next...")
@@ -219,7 +219,8 @@ class DataGenerator():
 
             vid = torch.cat([torch.unsqueeze(frames[index[0]:index[1], :, :], 0) for index in frame_idxs], dim=0)
 
-            vid = torch.cat([self.attention_extractor._inference(clip) for clip in vid], dim=0)
+            vid = torch.cat([torch.unsqueeze(self.attention_extractor._inference(clip), 0) for clip in vid], dim=0)
+            vid = torch.unsqueeze(vid, -1)
 
             vid = vid.type(torch.float) / 255.
 
