@@ -230,6 +230,7 @@ class DataGenerator():
             x_ft = self.fft(self.add_noise(y_audio))
             y_ft = self.fft(y_audio)
 
+
             if self.use_polar:
               x_ft = self.cartesian_to_polar(x_ft)
               y_ft = self.cartesian_to_polar(y_ft)
@@ -241,6 +242,18 @@ class DataGenerator():
             if self.center_fft:
               x_ft = self.center_fft_bins(x_ft)
               y_ft = self.center_fft_bins(y_ft)
+
+
+          
+            print(x_ft.shape)
+            # have to do this because pytorch is channels first
+            x_ft = x_ft.permute(0, 2, 1)
+            y_ft = y_ft.permute(0, 2, 1)
+
+            vid = vid.permute(0, 4, 1, 2, 3)
+
+            print(f"SHAPES! x_ft:{x_ft.shape} y_ft:{y_ft.shape} vid:{vid.shape}")
+
 
             vid = vid.to(self.device)
             x_ft = x_ft.to(self.device)

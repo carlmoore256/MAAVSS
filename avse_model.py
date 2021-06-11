@@ -3,33 +3,89 @@
 # from tensorflow.keras.layers import concatenate, Dense, AveragePooling1D, AveragePooling3D, UpSampling3D
 import torch.nn as nn
 import torch.nn.functional as F
-
+import torch
 
 class AVSE_Model(nn.Module):
-    def __init__(self):
+    def __init__(self, a_shape, v_shape):
         super(AVSE_Model, self).__init__()
-        # self.conv1 = nn.Conv1d(in_channels=1, out_channels=18, kernel_size=3, stride=1)
+
+        self.a_shape = a_shape
+        self.v_shape = v_shape
+
+        print(f"\nA SHAPE {a_shape}")
+        print(f"V SHAPE {v_shape}\n")
 
         self.audio_net = nn.Sequential(
-            nn.Conv1d(in_channels=1, out_channels=10, kernel_size=3, stride=1),
+            nn.Conv1d(in_channels=2, out_channels=10, kernel_size=3, stride=1),
             nn.Tanh(),
             nn.AvgPool1d(2),
             nn.Conv1d(10, 4, kernel_size=5, stride=1),
-            nn.ReLU()
+            nn.ReLU(),
+            nn.AvgPool1d(2),
+            nn.Conv1d(4, 2, kernel_size=5, stride=1),
+            nn.ReLU(),
+            nn.AvgPool1d(2),
+            # nn.Flatten()
         )
 
         self.visual_net = nn.Sequential(
-            nn.Conv3d(2, 12, kernel_size=9, stride=(1,2,2), padding_mode="replicate"),
+            nn.Conv3d(1, 12, kernel_size=3, stride=(1,2,2), padding_mode="zeros"),
             nn.ReLU(),
-            nn.Conv3d(12, 6, kernel_size=9, stride=(2,2,2), padding_mode="replicate"),
+            nn.Conv3d(12, 6, kernel_size=(1, 3, 3), stride=(1,2,2), padding_mode="zeros"), # <- this is an issue, is the kernel doing anything in time?
+            nn.ReLU(),
+            nn.Conv3d(6, 2, kernel_size=(1, 3, 3), stride=(2,2,2), padding_mode="zeros"),
             nn.ReLU()
+            # nn.Flatten()
         )
 
+        self.av_fc1 = nn.Linear(2182, 512, bias=False)
+        self.av_fc1_ln = nn.LayerNorm(512, elementwise_affine=True)
+
+        # self.av_fc2 = nn.Linear(512, )
+
+        self.a_fc_out = nn.Linear(512, a_shape[1] * a_shape[2])
+        self.v_fc_out = nn.Linear(512, v_shape[1] * v_shape[2] * v_shape[3] * v_shape[4])
+
     def forward(self, x_a, x_v):
-        print(f"xa sh {x_a.shape}")
+        print(f"\n xa sh {x_a.shape}")
         print(f"xv sh {x_v.shape}")
         y_a = self.audio_net(x_a)
         y_v = self.visual_net(x_v)
+
+        # y_v = y_v.squeeze(2) # -> squeeze time dimension?
+
+        # y_a = y_a.unsqueeze(-1) # -> add another dimension?
+
+        # y_v = y_v.reshape((y_v.shape[0], y_v.shape[1], y_v.shape[2], y_v.shape[3] * y_v.shape[4]))
+        y_v = y_v.flatten(start_dim=-2, end_dim=-1) # <- cool way to reshape
+        y_v = y_v.squeeze(2)
+
+        print(f"\n ya sh {y_a.shape}")
+        print(f"yv sh {y_v.shape} \n")
+
+        av_fc = torch.cat((y_a, y_v), -1)
+
+        av_fc = av_fc.flatten(start_dim=1)
+        
+        av_fc = self.av_fc1(av_fc)
+        av_fc = self.av_fc1_ln(av_fc)
+        av_fc = F.leaky_relu(av_fc, negative_slope=0.3) # <- use functional here for simplicity
+        print(f"av_fc shape {av_fc.shape} \n")
+
+        y_a = self.a_fc_out(av_fc)
+        y_a = F.tanh(y_a)
+        y_a = y_a.reshape(self.a_shape)
+
+        # reconstruction of video attention frames
+        y_v = self.v_fc_out(av_fc)
+        y_v = F.leaky_relu(y_v, negative_slope=0.3) 
+        # reshape tensor into original dimensions
+        y_v = y_v.reshape(self.v_shape)
+
+        print("\n AFTER FORWARD PASS: ")
+        print(f"\n ya sh {y_a.shape}")
+        print(f"yv sh {y_v.shape} \n")
+
         return y_a, y_v
 
 
