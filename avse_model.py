@@ -47,8 +47,7 @@ class AVSE_Model(nn.Module):
         self.v_fc_out = nn.Linear(512, v_shape[1] * v_shape[2] * v_shape[3] * v_shape[4])
 
     def forward(self, x_a, x_v):
-        print(f"\n xa sh {x_a.shape}")
-        print(f"xv sh {x_v.shape}")
+
         y_a = self.audio_net(x_a)
         y_v = self.visual_net(x_v)
 
@@ -60,9 +59,6 @@ class AVSE_Model(nn.Module):
         y_v = y_v.flatten(start_dim=-2, end_dim=-1) # <- cool way to reshape
         y_v = y_v.squeeze(2)
 
-        print(f"\n ya sh {y_a.shape}")
-        print(f"yv sh {y_v.shape} \n")
-
         av_fc = torch.cat((y_a, y_v), -1)
 
         av_fc = av_fc.flatten(start_dim=1)
@@ -70,10 +66,9 @@ class AVSE_Model(nn.Module):
         av_fc = self.av_fc1(av_fc)
         av_fc = self.av_fc1_ln(av_fc)
         av_fc = F.leaky_relu(av_fc, negative_slope=0.3) # <- use functional here for simplicity
-        print(f"av_fc shape {av_fc.shape} \n")
 
         y_a = self.a_fc_out(av_fc)
-        y_a = F.tanh(y_a)
+        y_a = torch.tanh(y_a)
         y_a = y_a.reshape(self.a_shape)
 
         # reconstruction of video attention frames
@@ -81,10 +76,6 @@ class AVSE_Model(nn.Module):
         y_v = F.leaky_relu(y_v, negative_slope=0.3) 
         # reshape tensor into original dimensions
         y_v = y_v.reshape(self.v_shape)
-
-        print("\n AFTER FORWARD PASS: ")
-        print(f"\n ya sh {y_a.shape}")
-        print(f"yv sh {y_v.shape} \n")
 
         return y_a, y_v
 

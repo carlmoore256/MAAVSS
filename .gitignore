@@ -4,3 +4,4 @@ env/
 *.pth
 interactive-main.ipynb
 notes.txt
+wandb/

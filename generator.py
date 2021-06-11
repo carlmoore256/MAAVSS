@@ -62,6 +62,7 @@ class DataGenerator():
 
     # waveform audio -> FFT[:, 0:len(fft)/2]
     def fft(self, audio):
+
         if self.normalize_input_fft:
           fft = torch.fft.fft(audio, dim=-1, norm="forward")
         else:
@@ -102,12 +103,14 @@ class DataGenerator():
     def complex_to_ri(self, tensor):
         ri_t = torch.view_as_real(tensor)
         # ri_t = torch.swapaxes(ri_t, 1, 2)
+        ri_t = ri_t.permute(0, 2, 1)
         return ri_t
 
     # float32 tensor to cartesian notation:
     # [real, imaginary] -> [complex,]
     def ri_to_complex(self, tensor):      
         # complex_t = torch.swapaxes(tensor, 1, 2)
+        tensor = tensor.permute(0, 2, 1).contiguous()
         return torch.view_as_complex(tensor)
 
     # center fft by interlacing freqs and concatenating mirror
@@ -116,21 +119,21 @@ class DataGenerator():
     # another goal is to achieve greater gaussian distribution by interleaving frequencies
     # in the network during the split/mirror process
     def center_fft_bins(self, fft_tensor):
-        left = fft_tensor[:, ::2, :]
-        right = fft_tensor[:, 1::2, :]
-        left = torch.flip(left, [1])
-        centered_fft = torch.cat((left, right), 1)
+        left = fft_tensor[:, :, ::2]
+        right = fft_tensor[:, :, 1::2]
+        left = torch.flip(left, [-1])
+        centered_fft = torch.cat((left, right), -1)
         return centered_fft
 
     # reverse process of center_data()
     # un-mirrors and de-interlaces fft_tensors
     def decenter_fft_bins(self, fft_tensor):
         de_interlaced = torch.zeros_like(fft_tensor)
-        left = fft_tensor[:, :fft_tensor.shape[1]//2, :]
-        right = fft_tensor[:, fft_tensor.shape[1]//2:, :] 
-        left = torch.flip(left, [1])
-        de_interlaced[:, ::2, :] = left
-        de_interlaced[:, 1::2, :] = right
+        left = fft_tensor[:, :, :fft_tensor.shape[-1]//2]
+        right = fft_tensor[:, :, fft_tensor.shape[-1]//2:] 
+        left = torch.flip(left, [-1])
+        de_interlaced[:, :, ::2] = left
+        de_interlaced[:, :, 1::2] = right
         return de_interlaced
 
     def reverse_process_fft(self, fft_tensor):
@@ -141,10 +144,13 @@ class DataGenerator():
       if self.center_fft:
         # fft_tensor = self.complex_to_ri(fft_tensor)
         fft_tensor = self.decenter_fft_bins(fft_tensor)
-      
       fft_tensor = self.ri_to_complex(fft_tensor)
       return fft_tensor
 
+    def inference_to_audio(self, tensor):
+      tensor = self.reverse_process_fft(tensor)
+      audio = self.ifft(tensor)
+      return audio
 
     # load audio and video exaple pair
     def load_example_pair(self, vid_path):
@@ -205,7 +211,7 @@ class DataGenerator():
     def generator(self):
         while True:
             self.example_idx += 1
-            if self.example_idx > len(self.all_vids):
+            if self.example_idx > len(self.all_vids)-1:
                 self.example_idx = 0
 
             frames, audio = self.load_example_pair(self.all_vids[self.example_idx])
@@ -217,9 +223,9 @@ class DataGenerator():
             frame_idxs = torch.cat((frame_idxs, frame_idxs + self.num_vid_frames), -1)
             samp_idxs = torch.cat((samp_idxs, samp_idxs + self.fft_len), -1)
 
-            vid = torch.cat([torch.unsqueeze(frames[index[0]:index[1], :, :], 0) for index in frame_idxs], dim=0)
+            vid_orig = torch.cat([torch.unsqueeze(frames[index[0]:index[1], :, :], 0) for index in frame_idxs], dim=0)
 
-            vid = torch.cat([torch.unsqueeze(self.attention_extractor._inference(clip), 0) for clip in vid], dim=0)
+            vid = torch.cat([torch.unsqueeze(self.attention_extractor._inference(clip), 0) for clip in vid_orig], dim=0)
             vid = torch.unsqueeze(vid, -1)
 
             vid = vid.type(torch.float) / 255.
@@ -243,20 +249,11 @@ class DataGenerator():
               x_ft = self.center_fft_bins(x_ft)
               y_ft = self.center_fft_bins(y_ft)
 
-
-          
-            print(x_ft.shape)
-            # have to do this because pytorch is channels first
-            x_ft = x_ft.permute(0, 2, 1)
-            y_ft = y_ft.permute(0, 2, 1)
-
             vid = vid.permute(0, 4, 1, 2, 3)
 
-            print(f"SHAPES! x_ft:{x_ft.shape} y_ft:{y_ft.shape} vid:{vid.shape}")
+            # print(f"x_ft:{x_ft.shape} y_ft:{y_ft.shape} vid:{vid.shape}")
+            # vid = vid.to(self.device)
+            # x_ft = x_ft.to(self.device)
+            # y_ft = y_ft.to(self.device)
 
-
-            vid = vid.to(self.device)
-            x_ft = x_ft.to(self.device)
-            y_ft = y_ft.to(self.device)
-
-            yield [[x_ft, vid], [y_ft, vid]]
+            yield [[x_ft, vid], [y_ft, vid], vid_orig, y_audio]
