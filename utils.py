@@ -15,7 +15,6 @@ def load_json(path):
   with open(path) as json_file:
       jfile = json.load(json_file)
   return jfile
-  
 
 def get_video_title(vid_id):
     params = {"format": "json", "url": "https://www.youtube.com/watch?v=%s" % vid_id}
@@ -27,7 +26,6 @@ def get_video_title(vid_id):
         response_text = response.read()
         data = json.loads(response_text.decode())
         return data['title']
-
 
 
 

@@ -22,8 +22,7 @@ class DataGenerator():
                  use_polar=True, 
                  normalize_input_fft=True,
                  shuffle_files=True, 
-                 data_path="./data/raw",
-                 device=None):
+                 data_path="./data/raw"):
 
         assert batch_size > 1
 
@@ -47,17 +46,12 @@ class DataGenerator():
 
         if shuffle_files:
           random.shuffle(self.all_vids)
-
-        # self.current_av_pair = self.load_example_pair(self.all_vids[0])
-
+          
         self.example_idx = 0
         self.center_fft = center_fft
         self.use_polar = use_polar
 
-        if device is None:
-          self.device = torch.device('cuda:0') # MAKE THIS SWITCH
-        else:
-          self.device = device
+        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 
     # waveform audio -> FFT[:, 0:len(fft)/2]
@@ -227,7 +221,6 @@ class DataGenerator():
 
             vid = torch.cat([torch.unsqueeze(self.attention_extractor._inference(clip), 0) for clip in vid_orig], dim=0)
             vid = torch.unsqueeze(vid, -1)
-
             vid = vid.type(torch.float) / 255.
 
             y_audio = torch.cat([torch.unsqueeze(audio[index[0]:index[1]], 0) for index in samp_idxs], dim=0)

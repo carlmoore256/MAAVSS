@@ -1,42 +1,48 @@
 # import avse_model
 from avse_model import AVSE_Model
-from train import TrainLoop
-import torch
 from generator import DataGenerator
+
+import torch
 import matplotlib.pyplot as plt
 import numpy as np
+import argparse
 import wandb
 
-wandb.init(project='MagPhaseLVASE', entity='carl_m')
+wandb.init(project='MagPhaseLVASE', entity='carl_m', config={"dataset":"MUSIC"})
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-b', '--batch_size', type=int, default=4, metavar='N')
+parser.add_argument('-lr', '--learning_rate', type=float, default=1e-5)
+parser.add_argument("-e", '--epochs', type=int, default=1000, help="epochs")
+parser.add_argument('--data_path', type=str, default="data/processed", help="path to dataset")
+parser.add_argument('--num_frames', type=int, default=4, help="number of consecutive video frames (converted to attention maps)")
+parser.add_argument('--framesize', type=int, default=256, help="scaled video frame dims (converted to attention maps)")
+parser.add_argument('--samplerate', type=int, default=16000, help="audio samplerate (dependent on dataset)")
+parser.add_argument('--center_fft', type=bool, default=True, help="interlace and center fft")
+parser.add_argument('--use_polar', type=bool, default=False, help="fft uses polar coordinates instead of rectangular")
+parser.add_argument('--normalize_fft', type=bool, default=True, help="normalize input fft by 1/n")
+parser.add_argument('--noise_scalar', type=float, default=0.1, help="scale gaussian noise by N for data augmentation (applied to x)")
+parser.add_argument('--cb_freq', type=int, default=100, help="wandb callback frequency in epochs")
+
+args = parser.parse_args()
+
 config = wandb.config
+wandb.config.update(args)
 
 DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-config.learning_rate = 1e-5
-config.batch_size = 4
-config.num_vid_frames = 4
-config.epochs = 1000
-
-config.center_fft = False
-config.use_polar=False
-config.normalize_fft=True
-
-img_freq = 50
-
-# loss_coefficient = 0.001 # loss = a_loss + loss_coefficient * v_loss
-
 dg = DataGenerator(
-    batch_size = config.batch_size,
-    num_vid_frames=config.num_vid_frames, 
+    batch_size=config.batch_size,
+    num_vid_frames=config.num_frames, 
     framerate=30,
-    framesize=256,
-    samplerate=16000, 
-    max_vid_frames=100,
-    noise_std=0.01,
+    framesize=config.framesize,
+    samplerate=config.samplerate, 
+    max_vid_frames=100, # accelerate video loading time
+    noise_std=config.noise_scalar,
     center_fft=config.center_fft, 
     use_polar=config.use_polar, 
     shuffle_files=config.normalize_fft, 
-    data_path = "data/processed"
+    data_path = config.data_path
 )
 
 gen = dg.generator()
@@ -64,7 +70,6 @@ for i in range(config.epochs):
     a_loss = mse_loss(yh_a, y[0].to(DEVICE)).sum()
     v_loss = mse_loss(yh_v, y[1].to(DEVICE))
 
-    # loss = a_loss + loss_coefficient * v_loss
     loss = a_loss + v_loss
 
     loss.backward()
@@ -77,13 +82,14 @@ for i in range(config.epochs):
                 "a_loss": a_loss,
                 "v_loss": v_loss} )
 
-    if i % img_freq == 0:
+    if i % config.cb_freq == 0:
         
         fig=plt.figure(figsize=(8, 6))
         plt.tight_layout()
 
-        cols = config.num_vid_frames
+        cols = config.num_frames
         rows = 3
+        
         for i in range(cols * rows):
             if i < cols:
                 img = vid[0, i]
@@ -126,6 +132,6 @@ for i in range(config.epochs):
         wandb.log( {
             "video_frames": wandb.Image(frame_plot),
             "fft_frames": wandb.Image(fft_plot),
-            "audio_input": wandb.Audio(audio[0], sample_rate=16000),
-            "audio_output": wandb.Audio(p_audio[0], sample_rate=16000)
+            "audio_input": wandb.Audio(audio[0], sample_rate=config.samplerate),
+            "audio_output": wandb.Audio(p_audio[0], sample_rate=config.samplerate)
         } )
