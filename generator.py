@@ -6,6 +6,8 @@ import os
 import numpy as np
 import random
 from video_attention import VideoAttention
+import torchvision.transforms as pt_transforms
+import torchvision
 
 class DataGenerator():
 
@@ -166,6 +168,13 @@ class DataGenerator():
 
     def load_video(self, path):
         cap = cv2.VideoCapture(path)
+
+        total_frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+
+        
+
+        print(f"\n FRAME COUNT! {cap.get(cv2.CAP_PROP_FRAME_COUNT)} \n")
+
         frames = []
         i = 0
 
@@ -202,6 +211,76 @@ class DataGenerator():
         a_clip = audio[sample_start:sample_end]
         return v_clip, a_clip
 
+        # data augmentation for video - cropping, random transformations
+    def video_transforms(self, video, size=(256,256)):
+      transform = pt_transforms.Compose([
+          #  pt_transforms.Resize(size)
+          #  pt_transforms.RandomCrop(size)
+          pt_transforms.RandomResizedCrop(size)
+          # torchvision.transforms.RandomRotation(
+          # torchvision.transforms.RandomAffine(
+          ])
+
+      video = transform(video)
+      video = pt_transforms.functional.autocontrast(video)
+      return video
+
+    def audio_transforms(self, audio, sr, normalize=True, compress=True):
+      # if normalize:
+      #   audio = torchaudio.functional.gain(audio, 
+      if sr != self.samplerate:
+        resamp = torchaudio.transforms.Resample(orig_freq=sr, new_freq=self.samplerate)
+        audio = resamp(audio)
+          
+      if compress:
+        audio = torchaudio.functional.contrast(audio) # applies compression
+
+      return audio
+
+    def spectrograms(self, audio, window, n_fft, hop_ratio, normalize=True, polar=False):
+      hop = window.shape[0]//hop_ratio
+      spec = torchaudio.functional.spectrogram(audio, 
+                                              window=window, 
+                                              n_fft=n_fft, 
+                                              hop_length=hop, 
+                                              win_length=window.shape[0], 
+                                              power=None, 
+                                              normalized=normalize, 
+                                              onesided=True)
+      if self.use_polar:
+        spec = torchaudio.functional.magphase(spec)
+      return spec
+
+
+    def load_audio_video(self, path):
+      return torchvision.io.read_video(path)
+
+    def get_av_example(self, av_pair, num_frames, desired_sr):
+
+      index = torch.randint(0, high=av_pair[0].shape[0]-num_frames-1, size=(1,))
+      
+      video = av_pair[0][index:index+num_frames, :, :, :].permute(0, 3, 1, 2)
+
+      info = av_pair[2]
+      fps = info["video_fps"]
+      sr = info["audio_fps"]
+
+      samp_start = int((index / fps) * sr)
+      samp_end = int((index + num_frames)/fps * sr)
+
+      audio = torch.sum(av_pair[1][:, samp_start:samp_end], dim=0)
+
+      audio = self.audio_transforms(audio, sr)
+
+      # add audio verification
+      video = self.video_transforms(video)
+
+      print(info)
+      print(video.shape)
+      print(audio.shape)
+
+      return audio, video
+
     def generator(self):
         while True:
             self.example_idx += 1
@@ -228,7 +307,6 @@ class DataGenerator():
             # input data augmentation - add noise (current implementation)
             x_ft = self.fft(self.add_noise(y_audio))
             y_ft = self.fft(y_audio)
-
 
             if self.use_polar:
               x_ft = self.cartesian_to_polar(x_ft)
