@@ -2,6 +2,8 @@ import json
 import urllib
 import urllib.request
 import glob
+import matplotlib.pyplot as plt
+import torch
 
 def get_all_files(base_dir, ext):
     return glob.glob(f'{base_dir}/*/**/**.{ext}', recursive=True)
@@ -26,6 +28,4 @@ def get_video_title(vid_id):
         response_text = response.read()
         data = json.loads(response_text.decode())
         return data['title']
-
-
 

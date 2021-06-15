@@ -5,10 +5,14 @@ from av_dataset import AV_Dataset
 from avse_model import AV_Model_STFT
 import argparse
 import matplotlib.pyplot as plt
+import numpy as np
+# import librosa.display
 import wandb
 
 if __name__ == "__main__":
   wandb.init(project='MagPhaseLVASE', entity='carl_m', config={"dataset":"MUSIC"})
+
+  # IF CHANING NUM_FRAMES, delete cached video frames
 
   parser = argparse.ArgumentParser()
   parser.add_argument('-b', '--batch_size', type=int, default=4, metavar='N')
@@ -56,10 +60,10 @@ if __name__ == "__main__":
                                           shuffle=True)
   dataloader = iter(dataloader)
 
-  x_stft, y_stft, video, audio = next(dataloader)
+  x_stft, y_stft, attn, audio, video = next(dataloader)
 
 
-  model = AV_Model_STFT(x_stft.shape, video.shape).to(DEVICE)
+  model = AV_Model_STFT(x_stft.shape, attn.shape).to(DEVICE)
 
   mse_loss = torch.nn.MSELoss()
   # cosine_loss = torch.nn.CosineSimilarity()
@@ -69,15 +73,15 @@ if __name__ == "__main__":
       optimizer.zero_grad()
 
       try:
-        x_stft, y_stft, video, audio = next(dataloader)
+        x_stft, y_stft, attn, audio, video = next(dataloader)
       except Exception as e:
         print("ERROR LOADING EXAMPLE, SKIPPING...")
         continue
 
-      yh_a, yh_v = model(x_stft.to(DEVICE), video.to(DEVICE))
+      yh_stft, yh_attn = model(x_stft.to(DEVICE), attn.to(DEVICE))
 
-      a_loss = mse_loss(yh_a, y_stft.to(DEVICE)).sum()
-      v_loss = mse_loss(yh_v, video.to(DEVICE))
+      a_loss = mse_loss(yh_stft, y_stft.to(DEVICE)).sum()
+      v_loss = mse_loss(yh_attn, attn.to(DEVICE))
 
       loss = a_loss + v_loss
 
@@ -91,56 +95,78 @@ if __name__ == "__main__":
                   "a_loss": a_loss,
                   "v_loss": v_loss} )
 
-      # if i % config.cb_freq == 0:
-          
-      #     fig=plt.figure(figsize=(8, 6))
-      #     plt.tight_layout()
+      if i % config.cb_freq == 0:
+        fig=plt.figure(figsize=(8, 5))
+        plt.tight_layout()
 
-      #     cols = config.num_frames
-      #     rows = 3
-          
-      #     for i in range(cols * rows):
-      #         if i < cols:
-      #             img = vid[0, i]
-      #         elif i < cols * 2:
-      #             img = x[1][0, 0, i%cols, :, :].cpu().detach().numpy()
-      #         else:
-      #             img = yh_v[0, 0, i%cols, :, :].cpu().detach().numpy()
-      #         fig.add_subplot(rows, cols, i+1)
-      #         plt.xticks([])
-      #         plt.yticks([])
-      #         plt.imshow(img)
-      #     fig.canvas.draw()
-      #     frame_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-      #     frame_plot = frame_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+        cols = config.num_frames
+        rows = 3
 
-      #     fig=plt.figure(figsize=(8, 7))
+        for i in range(cols * rows):
+          if i < cols:
+              img = video[0, 0, i, :, :].cpu().detach().numpy()
+          elif i < cols * 2:
+              img = attn[0, 0, i%cols, :, :].cpu().detach().numpy()
+          else:
+              img = yh_attn[0, 0, i%cols, :, :].cpu().detach().numpy()
+          fig.add_subplot(rows, cols, i+1)
+          plt.xticks([])
+          plt.yticks([])
+          plt.imshow(img)
+        fig.canvas.draw()
+        frame_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+        frame_plot = frame_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
 
-      #     fig.add_subplot(3, 1, 1)
-      #     plt.title("x - noisy fft")
-      #     plt.tight_layout()
-      #     plt.plot(x[0][0, 0, :].cpu().detach().numpy())
-      #     plt.plot(x[0][0, 1, :].cpu().detach().numpy())
+        fig=plt.figure(figsize=(8, 3))
+        plt.tight_layout()
 
-      #     fig.add_subplot(3, 1, 2)
-      #     plt.title("y - target fft")
-      #     plt.plot(y[0][0, 0, :].cpu().detach().numpy())
-      #     plt.plot(y[0][0, 1, :].cpu().detach().numpy())
+        x_stft_ex = x_stft[0].cpu().detach().numpy()
+        plt.subplot(1,6,1)
+        plt.axis("off")
+        plt.title("x (real)")
+        plt.imshow(x_stft_ex[0])
 
-      #     fig.add_subplot(3, 1, 3)
-      #     plt.title("yhat - predicted fft")
-      #     plt.plot(yh_a[0, 0, :].cpu().detach().numpy())
-      #     plt.plot(yh_a[0, 1, :].cpu().detach().numpy())
+        plt.subplot(1,6,2)
+        plt.axis("off")
+        plt.title("x (imag)")
+        plt.imshow(x_stft_ex[1])
 
-      #     fig.canvas.draw()
-      #     fft_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-      #     fft_plot = fft_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-          
-      #     p_audio = dg.inference_to_audio(yh_a.cpu().detach())
+        y_stft_ex = y_stft[0].cpu().detach().numpy()
+        plt.subplot(1,6,3)
+        plt.axis("off")
+        plt.title("y (real)")
+        plt.imshow(y_stft_ex[0])
+        plt.subplot(1,6,4)
+        plt.axis("off")
+        plt.title("y (imag)")
+        plt.imshow(y_stft_ex[1])
 
-      #     wandb.log( {
-      #         "video_frames": wandb.Image(frame_plot),
-      #         "fft_frames": wandb.Image(fft_plot),
-      #         "audio_input": wandb.Audio(audio[0], sample_rate=config.samplerate),
-      #         "audio_output": wandb.Audio(p_audio[0], sample_rate=config.samplerate)
-      #     } )
+        yh_stft_ex = yh_stft[0].cpu().detach().numpy()
+        plt.subplot(1,6,5)
+        plt.axis("off")
+        plt.title("yh (real)")
+        plt.imshow(yh_stft_ex[0])
+        plt.subplot(1,6,6)
+        plt.axis("off")
+        plt.title("yh (imag)")
+        plt.imshow(yh_stft_ex[1])
+
+        fig.canvas.draw()
+        fft_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+        fft_plot = fft_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+
+        window = torch.hamming_window(config.fft_len)
+        p_audio = torch.istft(yh_stft[0].cpu().detach().permute(1,2,0), 
+                              n_fft=config.fft_len, 
+                              hop_length=config.fft_len//config.hop_ratio, 
+                              win_length=config.fft_len,
+                              window=window,
+                              normalized=config.normalize_fft,
+                              onesided=True)
+
+        wandb.log( {
+            "video_frames": wandb.Image(frame_plot),
+            "fft_frames": wandb.Image(fft_plot),
+            "audio_input": wandb.Audio(audio[0], sample_rate=config.samplerate),
+            "audio_output": wandb.Audio(p_audio, sample_rate=config.samplerate)
+        } )

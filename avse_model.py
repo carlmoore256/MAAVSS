@@ -93,7 +93,7 @@ class AV_Model_STFT(nn.Module):
             nn.Conv2d(in_channels=2, out_channels=10, kernel_size=(3,3), stride=1),
             nn.ReLU(),
             nn.AvgPool2d(2),
-            nn.Conv1d(10, 4, kernel_size=(5,5), stride=1),
+            nn.Conv2d(10, 4, kernel_size=(5,5), stride=1),
             nn.ReLU(),
             nn.AvgPool2d(2),
             nn.Conv2d(4, 2, kernel_size=(5,5), stride=1),
@@ -105,14 +105,25 @@ class AV_Model_STFT(nn.Module):
         self.visual_net = nn.Sequential(
             nn.Conv3d(1, 12, kernel_size=3, stride=(1,2,2), padding_mode="zeros"),
             nn.ReLU(),
-            nn.Conv3d(12, 6, kernel_size=(1, 3, 3), stride=(1,2,2), padding_mode="zeros"), # <- this is an issue, is the kernel doing anything in time?
+            nn.Conv3d(12, 10, kernel_size=(3, 3, 3), stride=(2,2,2), padding_mode="zeros"), # <- this is an issue, is the kernel doing anything in time?
+            nn.ReLU(),
+            nn.Conv3d(10, 6, kernel_size=(1, 3, 3), stride=(1,2,2), padding_mode="zeros"),
             nn.ReLU(),
             nn.Conv3d(6, 2, kernel_size=(1, 3, 3), stride=(2,2,2), padding_mode="zeros"),
             nn.ReLU()
             # nn.Flatten()
         )
 
-        self.av_fc1 = nn.Linear(3868, 512, bias=True)
+        y_a = torch.rand(stft_shape)
+        y_v = torch.rand(v_shape)
+
+        with torch.no_grad():
+            stft_out = self.audio_net(y_a)
+            v_out = self.visual_net(y_v)
+
+        av_fc = self.concat_av(stft_out, v_out)
+
+        self.av_fc1 = nn.Linear(av_fc.shape[-1], 512, bias=False)
         self.av_fc1_ln = nn.LayerNorm(512, elementwise_affine=True)
 
         # self.av_fc2 = nn.Linear(512, )
@@ -120,31 +131,51 @@ class AV_Model_STFT(nn.Module):
         self.a_fc_out = nn.Linear(512, stft_shape[1] * stft_shape[2] * stft_shape[3])
         self.v_fc_out = nn.Linear(512, v_shape[1] * v_shape[2] * v_shape[3] * v_shape[4])
 
+    def concat_av(self, y_a, y_v):
+        # print(f"\n BEFORE y_a sh { y_a.shape} y_v sh {y_v.shape} \n")
+        y_a = y_a.squeeze(-1)
+        y_v = y_v.squeeze(2)
+        y_v = y_v.flatten(start_dim=2, end_dim=3)
+        # print(f"\n AFTER y_a sh {y_a.shape} y_v sh {y_v.shape} \n")
+        av_fc = torch.cat((y_a, y_v), -1)
+        av_fc = av_fc.flatten(start_dim=1, end_dim=2)
+        return av_fc
+
     def forward(self, x_a, x_v):
 
         y_a = self.audio_net(x_a)
         y_v = self.visual_net(x_v)
+
+        
+        # print(f"y_a sh {y_a.shape} y_v sh {y_v.shape}")
+
+        # y_a = y_a.squeeze(3)
+        # y_v = y_v.squeeze(2)
+
+        
 
         # y_v = y_v.squeeze(2) # -> squeeze time dimension?
 
         # y_a = y_a.unsqueeze(-1) # -> add another dimension?
 
         # y_v = y_v.reshape((y_v.shape[0], y_v.shape[1], y_v.shape[2], y_v.shape[3] * y_v.shape[4]))
-        y_v = y_v.flatten(start_dim=-3, end_dim=-1) # <- cool way to reshape
+        # y_v = y_v.flatten(start_dim=2, end_dim=3) # <- cool way to reshape
         # y_v = y_v.squeeze(2)
+        # print(f"y_a sh {y_a.shape} y_v sh {y_v.shape}")
+        # y_a = y_a.flatten(start_dim=2, end_dim=3)
 
-        y_a = y_a.flatten(start_dim=2, end_dim=3)
+        # av_fc = torch.cat((y_a, y_v), -1)
 
-        av_fc = torch.cat((y_a, y_v), -1)
+        av_fc = self.concat_av(y_a, y_v)
 
-        av_fc = av_fc.flatten(start_dim=1)
-        
+        # print(f'AV FC {av_fc.shape}')
+
         av_fc = self.av_fc1(av_fc)
         av_fc = self.av_fc1_ln(av_fc)
         av_fc = F.leaky_relu(av_fc, negative_slope=0.3) # <- use functional here for simplicity
 
         y_a = self.a_fc_out(av_fc)
-        y_a = torch.tanh(y_a)
+        y_a = F.leaky_relu(y_a, negative_slope=0.3)
         y_a = y_a.reshape(self.stft_shape)
 
         # reconstruction of video attention frames

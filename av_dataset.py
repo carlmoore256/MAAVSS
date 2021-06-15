@@ -9,6 +9,9 @@ from torchvision.transforms.transforms import Grayscale
 from video_attention import VideoAttention
 import random
 import utils
+import pickle
+import os
+
 
 class AV_Dataset():
 
@@ -43,7 +46,7 @@ class AV_Dataset():
         self.hop=fft_len//hop_ratio
         self.center_fft = center_fft
         self.use_polar = use_polar
-        self.example_idx = 0
+        # self.example_idx = 0
         self.autocontrast = autocontrast
         all_vids = utils.get_all_files(data_path, "mp4")
         print(f"number of videos found: {len(all_vids)}")
@@ -53,21 +56,32 @@ class AV_Dataset():
         self.transform = pt_transforms.Compose([
           #  pt_transforms.Resize(size)
           # pt_transforms.Grayscale(),
-          pt_transforms.RandomResizedCrop(framesize),
-          pt_transforms.Normalize(
-                    (0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+          pt_transforms.RandomResizedCrop(framesize, scale=(0.6,1.0)),
+          # pt_transforms.Normalize(
+          #           (0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
         ])
 
-        if shuffle_files:
-          random.shuffle(all_vids)
+        # if shuffle_files:
+        #   random.shuffle(all_vids)
 
+        self.extract_clips(all_vids, frames_per_clip, frame_hop, framerate)
+
+    def extract_clips(self, all_vids, frames_per_clip, frame_hop, framerate):
+      if not os.path.isfile("clipcache/video_clips.obj"):
         self.video_clips = VideoClips(
-            all_vids[:1],
+            all_vids[:40],
             frames_per_clip,
             frame_hop,
             framerate,
             # num_workers=num_workers
         )
+
+        filehandler = open("clipcache/video_clips.obj", 'wb')
+        pickle.dump(self.video_clips, filehandler)
+      else:
+        print("loading video clip slices from cache")
+        filehandler = open("clipcache/video_clips.obj", 'rb') 
+        self.video_clips = pickle.load(filehandler)
 
 
     def stft(self, audio, normalize=True, polar=False):
@@ -122,19 +136,18 @@ class AV_Dataset():
         x_stft = self.add_noise(y_stft)
 
         video = video.type(torch.float)
-        if self.transform is not None:
-            video = self.transform(video)
+        # if self.transform is not None:
+        video = self.transform(video)
 
+        attn = torch.unsqueeze(self.attention_extractor._inference(video), 0)
 
-        video = torch.unsqueeze(self.attention_extractor._inference(video), 0)
-        # print(video.shape)
-        # video = video.permute(1, 0, 2, 3)
+        attn = attn / 255.
 
-        video = video / 256.
+        video = video.permute(1, 0, 2, 3)
 
         # video = pt_transforms.functional.autocontrast(video)
 
-        return x_stft, y_stft, video, audio
+        return x_stft, y_stft, attn, audio, video
         
 
 if __name__ == "__main__":
