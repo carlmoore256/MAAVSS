@@ -35,23 +35,7 @@ class VideoAttention:
 
     def _inference(self, frames):
 
-        # attn_frames = np.zeros((frames.shape[0], frames.shape[1], frames.shape[2]))
-        # attn_frames = torch.zeros((frames.shape[0], frames.shape[1], frames.shape[2]))
-        # attn_frames = attn_frames.to(DEVICE)
         attn_frames = []
-        # frames = torch.swapaxes(frames, -1, -3)
-        
-
-        # transform = pth_transforms.Compose(
-        #     [
-        #         # pth_transforms.Resize(self.resize),
-        #         pth_transforms.Normalize(
-        #             (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
-        #         ),
-        #     ]
-        # )
-
-        # frames = transform(frames)
 
         for idx, img in enumerate(frames):
             # make the image divisible by the patch size

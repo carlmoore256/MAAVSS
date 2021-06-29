@@ -66,13 +66,16 @@ class AV_Dataset():
 
         self.extract_clips(all_vids, frames_per_clip, frame_hop, framerate)
 
+        self.audio_sample_len = (samplerate//framerate) + 32
+
+
     def extract_clips(self, all_vids, frames_per_clip, frame_hop, framerate):
       if not os.path.isfile("clipcache/video_clips.obj"):
         self.video_clips = VideoClips(
-            all_vids[:40],
-            frames_per_clip,
-            frame_hop,
-            framerate,
+            all_vids[:10],
+            clip_length_in_frames=frames_per_clip,
+            frames_between_clips=frame_hop,
+            frame_rate=framerate,
             # num_workers=num_workers
         )
 
@@ -82,7 +85,6 @@ class AV_Dataset():
         print("loading video clip slices from cache")
         filehandler = open("clipcache/video_clips.obj", 'rb') 
         self.video_clips = pickle.load(filehandler)
-
 
     def stft(self, audio, normalize=True, polar=False):
       # hop = window.shape[0]//hop_ratio
@@ -103,13 +105,20 @@ class AV_Dataset():
       # if normalize:
       #   audio = torchaudio.functional.gain(audio, 
       audio = torch.sum(audio, dim=0)
+      print(f'AUDIO SHAPE {audio.shape} AVG LEN {self.audio_sample_len} ratio {audio.shape[0]/self.audio_sample_len}')
 
+      # print(f"SAMPLERATES this sr {sr} self.sr {self.samplerate} audio in {audio.shape}")
       if sr != self.samplerate:
         resamp = torchaudio.transforms.Resample(orig_freq=sr, new_freq=self.samplerate)
         audio = resamp(audio)
-          
+      # print(f'AUDIO OUT {audio.shape}')
       if compress:
         audio = torchaudio.functional.contrast(audio) # applies compression
+
+
+      # if audio.shape[0] != self.audio_sample_len:
+      #   audio
+
 
       return audio
 
@@ -123,11 +132,20 @@ class AV_Dataset():
 
     def __getitem__(self, idx):
 
+      try:
+        valid_example = False
         video, audio, info, video_idx = self.video_clips.get_clip(idx)
 
+        if audio.shape[1] == 0:
+          # valid_example = True
+          print("INVALID EXAMPLE, SKIPPING")
+          raise Exception('spam', 'eggs')
+          # pass
+            
         video = video.permute(0, 3, 1, 2)
 
         sr = info["audio_fps"]
+        # print(f'AUDIO FPS {info["audio_fps"]}')
 
         audio = self.audio_transforms(audio, sr)
 
@@ -148,6 +166,8 @@ class AV_Dataset():
         # video = pt_transforms.functional.autocontrast(video)
 
         return x_stft, y_stft, attn, audio, video
+      except Exception as e:
+        print(e)
         
 
 if __name__ == "__main__":

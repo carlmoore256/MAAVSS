@@ -253,7 +253,10 @@ class DataGenerator():
 
 
     def load_audio_video(self, path):
-      return torchvision.io.read_video(path)
+      v = torchvision.io.read_video(path)
+      fps = v[2]["video_fps"]
+      sr = v[2]["audio_fps"]
+      return v[0], v[1], fps, sr
 
     def get_av_example(self, av_pair, num_frames, desired_sr):
 
@@ -287,14 +290,18 @@ class DataGenerator():
             if self.example_idx > len(self.all_vids)-1:
                 self.example_idx = 0
 
-            frames, audio = self.load_example_pair(self.all_vids[self.example_idx])
+            # frames, audio = self.load_example_pair(self.all_vids[self.example_idx])
+            frames, audio, fps, sr = self.load_audio_video(self.all_vids[self.example_idx])
 
             frame_idxs = torch.randint(0, high=len(frames) - self.num_vid_frames - 1, size=(self.batch_size, 1))
-            samp_idxs = (frame_idxs.type(torch.double)/self.framerate) * self.samplerate
-            samp_idxs = samp_idxs.type(torch.long)
+            # samp_idxs = (frame_idxs.type(torch.double)/self.framerate) * self.samplerate
+            # samp_idxs = samp_idxs.type(torch.long)
 
             frame_idxs = torch.cat((frame_idxs, frame_idxs + self.num_vid_frames), -1)
-            samp_idxs = torch.cat((samp_idxs, samp_idxs + self.fft_len), -1)
+
+            samp_idxs = ((frame_idxs.type(torch.double)/fps) * sr).type(torch.long)
+
+            # samp_idxs = torch.cat((samp_idxs, samp_idxs + self.fft_len), -1)
 
             vid_orig = torch.cat([torch.unsqueeze(frames[index[0]:index[1], :, :], 0) for index in frame_idxs], dim=0)
 
