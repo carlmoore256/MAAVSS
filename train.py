@@ -39,7 +39,8 @@ if __name__ == "__main__":
   DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
   dataset = AV_Dataset(
-    frames_per_clip=config.num_frames,
+    # frames_per_clip=config.num_frames,
+    frames_per_clip=90,
     frame_hop=config.frame_hop,
     framerate=config.framerate,
     framesize=config.framesize,

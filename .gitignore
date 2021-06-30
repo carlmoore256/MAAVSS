@@ -5,3 +5,7 @@ env/
 interactive-main.ipynb
 notes.txt
 wandb/
+test_vids/
+fps_info.npy
+video_loader_test.py
+video_loader_pts.py

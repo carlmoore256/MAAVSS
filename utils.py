@@ -4,6 +4,8 @@ import urllib.request
 import glob
 import matplotlib.pyplot as plt
 import torch
+import pickle
+import os
 
 def get_all_files(base_dir, ext):
     return glob.glob(f'{base_dir}/*/**/**.{ext}', recursive=True)
@@ -29,3 +31,47 @@ def get_video_title(vid_id):
         data = json.loads(response_text.decode())
         return data['title']
 
+# save object as cached obj
+def save_cache_obj(path, obj):
+  filehandler = open(path, 'wb')
+  pickle.dump(obj, filehandler)
+
+def load_cache_obj(path):
+  filehandler = open(path, 'rb') 
+  obj = pickle.load(filehandler)
+  return obj
+
+def filter_valid_fps(all_vids, lower_lim=29.97002997002996, upper_lim=30.):
+  import cv2
+  print(f"filtering valid clips")
+  valid_clips = []
+
+  for v in all_vids:
+      video = cv2.VideoCapture(v)
+      fps = video.get(cv2.CAP_PROP_FPS)
+      # num_frames = video.get(cv2.CAP_PROP_FRAME_COUNT)
+      video.release()
+      # fps_info.append(np.array([fps, num_frames]))
+      if fps >= lower_lim and fps <=upper_lim:
+          valid_clips.append(v)
+
+  return valid_clips
+
+
+def extract_clips(all_vids, frames_per_clip, frame_hop, framerate):
+    if not os.path.isfile("clipcache/video_clips.obj"):
+        from video_utils_custom import VideoClips
+
+        video_clips = VideoClips(
+            all_vids,
+            clip_length_in_frames=frames_per_clip,
+            frames_between_clips=frame_hop,
+            frame_rate=framerate,
+            # num_workers=num_workers
+        )
+
+        save_cache_obj("clipcache/video_clips.obj", video_clips)
+    else:
+        print("loading video clip slices from cache")
+        video_clips = load_cache_obj("clipcache/video_clips.obj")
+    return video_clips

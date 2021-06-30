@@ -35,9 +35,10 @@ class VideoAttention:
 
     def _inference(self, frames):
 
-        attn_frames = []
+        # attn_frames = []
+        attn_frames = torch.zeros((frames.shape[0], 1, frames.shape[2], frames.shape[3]))
 
-        for idx, img in enumerate(frames):
+        for i, img in enumerate(frames):
             # make the image divisible by the patch size
             w, h = (
                 img.shape[1] - img.shape[1] % self.patch_size,
@@ -58,12 +59,10 @@ class VideoAttention:
             # we keep only a certain percentage of the mass
             val, idx = torch.sort(attentions)
             val /= torch.sum(val, dim=1, keepdim=True)
+
             cumval = torch.cumsum(val, dim=1)
             th_attn = cumval > (1 - self.threshold)
             idx2 = torch.argsort(idx)
-
-
-
             for head in range(nh):
                 th_attn[head] = th_attn[head][idx2[head]]
                 
@@ -75,8 +74,8 @@ class VideoAttention:
                     scale_factor=self.patch_size,
                     mode="nearest",
                 )[0]
-                .cpu()
-                .numpy()
+                # .cpu()
+                # .numpy()
             )
 
             attentions = attentions.reshape(nh, w_featmap, h_featmap)
@@ -86,18 +85,22 @@ class VideoAttention:
                     scale_factor=self.patch_size,
                     mode="nearest",
                 )[0]
-                .cpu()
-                .numpy()
+                # .cpu()
+                # .numpy()
             )
-            
-            output_frame = sum(attentions[i] * 1 / attentions.shape[0] for i in range(attentions.shape[0]))
+            # attentions = [attentions[i] * 1 / attentions.shape[0] for i in range(attentions.shape[0])]
+            attentions *= 1/attentions.shape[0] # divide by total number of frames
+            output_frame = torch.sum(attentions, dim=0) # sum attentions
+            output_frame *= 1/torch.max(output_frame)
 
-            attn_frames.append(output_frame)
+            # attn_frames.append(output_frame)
+            attn_frames[i, 0, :, :] = output_frame
+            # .to("cpu")
             # attn_frames[idx, :, :] = torch.as_tensor(output_frame).to(DEVICE)
             # attn_frames.append(output_frame)
 
-        attn_frames = np.asarray(attn_frames)
-        attn_frames = torch.as_tensor(attn_frames)
+        # attn_frames = np.asarray(attn_frames)
+        # attn_frames = torch.as_tensor(attn_frames)
         return attn_frames
 
 
