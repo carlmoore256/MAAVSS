@@ -67,8 +67,6 @@ class AV_Dataset():
         self.window = torch.hamming_window(self.fft_len)
 
         self.transform = pt_transforms.Compose([
-          #  pt_transforms.Resize(size)
-          # pt_transforms.Grayscale(),
           pt_transforms.RandomResizedCrop(framesize, scale=(0.6,1.0)),
           pt_transforms.Normalize(
                     (0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
@@ -84,6 +82,7 @@ class AV_Dataset():
         # since this is pre-processing, all input audio is assumed to be 44.1k
         self.audio_sample_len = int((44100/framerate) * frames_per_clip)
 
+        self.save_output_examples = False
 
     def stft(self, audio, normalize=True, polar=False):
       # hop = window.shape[0]//hop_ratio
@@ -136,7 +135,31 @@ class AV_Dataset():
       # print(f'vid {video.shape} audio {audio.shape} exp shape {self.audio_sample_len} fps {info["video_fps"]} sr {info["audio_fps"]}')
 
       return video, audio, info
-      
+
+    def save_example(self, attn, audio, video, info, idx):
+
+      audio_out = audio.unsqueeze(0)
+
+      torchvision.io.write_video(f"test_vids/example_{idx}.mp4",
+                                  video,
+                                  fps=info["video_fps"],
+                                  video_codec="h264",
+                                  audio_array=audio_out,
+                                  audio_fps=info["audio_fps"],
+                                  audio_codec="aac")
+
+      attn_save = attn.permute(0,2,3,1) * 255
+      attn_save = attn_save.type(torch.uint8).repeat(1, 1, 1, 3)
+
+      print(f"max attn {torch.max(attn)} max save {torch.max(attn_save)}")
+      torchvision.io.write_video(f"test_vids/example_{idx}_ATTN.mp4",
+                            attn_save,
+                            fps=info["video_fps"],
+                            video_codec="h264",
+                            audio_array=audio_out,
+                            audio_fps=info["audio_fps"],
+                            audio_codec="aac")
+
     def __len__(self):
         return self.video_clips.num_clips()
 
@@ -154,15 +177,6 @@ class AV_Dataset():
         else:
           idx += 1
 
-      audio_out = audio.unsqueeze(0)
-
-      torchvision.io.write_video(f"test_vids/example_{idx}.mp4",
-                                  video,
-                                  fps=info["video_fps"],
-                                  video_codec="h264",
-                                  audio_array=audio_out,
-                                  audio_fps=info["audio_fps"],
-                                  audio_codec="aac")
           
       video = video.permute(0, 3, 1, 2)
 
@@ -176,26 +190,14 @@ class AV_Dataset():
       y_stft = y_stft.permute(2, 0, 1)
       x_stft = self.add_noise(y_stft)
 
-      video = video.type(torch.float)
-      # if self.transform is not None:
+      video = video.type(torch.float) / 255.
       video = self.transform(video)
 
-      # attn = torch.unsqueeze(self.attention_extractor._inference(video), 0)
+      # get the video's attention map using DINO model
       attn = self.attention_extractor._inference(video)
 
-      attn_save = attn.permute(0,2,3,1) * 255
-      attn_save = attn_save.type(torch.uint8).repeat(1, 1, 1, 3)
-
-      print(f"max attn {torch.max(attn)} max save {torch.max(attn_save)}")
-      torchvision.io.write_video(f"test_vids/example_{idx}_ATTN.mp4",
-                            attn_save,
-                            fps=info["video_fps"],
-                            video_codec="h264",
-                            audio_array=audio_out,
-                            audio_fps=info["audio_fps"],
-                            audio_codec="aac")
-
-      # attn = attn / 255.
+      if self.save_output_examples:
+        self.save_example(attn, audio, video, info, idx)
 
       video = video.permute(1, 0, 2, 3)
 

@@ -34,8 +34,6 @@ class VideoAttention:
         
 
     def _inference(self, frames):
-
-        # attn_frames = []
         attn_frames = torch.zeros((frames.shape[0], 1, frames.shape[2], frames.shape[3]))
 
         for i, img in enumerate(frames):
@@ -50,7 +48,6 @@ class VideoAttention:
             h_featmap = img.shape[-1] // self.patch_size
             
             attentions = self.model.get_last_selfattention(img.to(DEVICE))
-
             nh = attentions.shape[1]  # number of head
 
             # we keep only the output patch attention
@@ -89,7 +86,7 @@ class VideoAttention:
                 # .numpy()
             )
             # attentions = [attentions[i] * 1 / attentions.shape[0] for i in range(attentions.shape[0])]
-            attentions *= 1/attentions.shape[0] # divide by total number of frames
+            # attentions *= 1/attentions.shape[0] # divide by total number of frames
             output_frame = torch.sum(attentions, dim=0) # sum attentions
             output_frame *= 1/torch.max(output_frame)
 
