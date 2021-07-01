@@ -11,7 +11,7 @@ import random
 import utils
 import pickle
 import os
-
+import time
 
 class AV_Dataset():
 
@@ -75,14 +75,14 @@ class AV_Dataset():
         if shuffle_files:
           random.shuffle(all_vids)
 
-        self.video_clips = utils.extract_clips(all_vids[:4], 
+        self.video_clips = utils.extract_clips(all_vids[:7], 
                                               frames_per_clip,
                                               frame_hop,
                                               None)
-        # since this is pre-processing, all input audio is assumed to be 44.1k
-        self.audio_sample_len = int((44100/framerate) * frames_per_clip)
 
-        self.save_output_examples = False
+        self.audio_sample_len = int((samplerate/framerate) * frames_per_clip)
+
+        self.save_output_examples = True
 
     def stft(self, audio, normalize=True, polar=False):
       # hop = window.shape[0]//hop_ratio
@@ -100,10 +100,9 @@ class AV_Dataset():
       return spec
 
     def audio_transforms(self, audio, sr, normalize=True, compress=False):
-      # if normalize:
-      #   audio = torchaudio.functional.gain(audio, 
+      if normalize:
+        audio *= torch.max(torch.abs(audio))
       # audio = torch.sum(audio, dim=0)
-      # print(f"SAMPLERATES this sr {sr} self.sr {self.samplerate} audio in {audio.shape}")
       if sr != self.samplerate:
         resamp = torchaudio.transforms.Resample(orig_freq=sr, new_freq=self.samplerate)
         audio = resamp(audio)
@@ -117,47 +116,53 @@ class AV_Dataset():
       return a_noise
 
     def get_av_pair(self, idx):
+      # t1 = time.perf_counter()
       video, _, info, video_idx, clip_idx = self.video_clips.get_clip(idx)
-
+      # t2 = time.perf_counter()
+      # print(f'torch video loading time {t2 - t1}')
       video_path = self.video_clips.video_paths[video_idx]
+      # t1 = time.perf_counter()
+      split_path = os.path.split(video_path)
+      audio_path = os.path.join(split_path[0], "audio/", f"{split_path[1][:-4]}.wav")
 
-      # now load in the audio separately because torchvision video clips is broken for audio
-      video_clip = VideoFileClip(video_path)
-      # num_frames = int(video_clip.fps * video_clip.duration)
-      frame_idx_start = clip_idx * self.frame_hop
-      frame_idx_end = frame_idx_start + self.frames_per_clip
+      # even though this is in docs it doesn't work wtf
+      # audio, sr = torchaudio.backend.soundfile_backend.load(audio_path,
+      #                                                       frame_offset=samples_start,
+      #                                                       num_frames=self.audio_sample_len)
+      audio, sr = torchaudio.load(audio_path)
+      # audio_info = torchaudio.backend.soundfile_backend.info(audio_path)
+      # sr = audio_info[0].rate
+      seconds_start = (clip_idx * self.frame_hop) / info["video_fps"]
+      samples_start = int(seconds_start * sr)
+      audio = audio[:, samples_start:samples_start+self.audio_sample_len]
+      audio = torch.sum(audio, dim=0)
+      # t2 = time.perf_counter()
+      # print(f'audio loading time {t2 - t1}')
+      return video, audio, info["video_fps"], sr
 
-      video_clip = video_clip.subclip(frame_idx_start/video_clip.fps, (frame_idx_end/video_clip.fps)+0.0001)
-      audio = video_clip.audio
-      audio = audio.to_soundarray()
-      audio = torch.as_tensor(audio[:self.audio_sample_len, :])
-      audio = torch.sum(audio, axis=-1)
-      # print(f'vid {video.shape} audio {audio.shape} exp shape {self.audio_sample_len} fps {info["video_fps"]} sr {info["audio_fps"]}')
-
-      return video, audio, info
-
-    def save_example(self, attn, audio, video, info, idx):
+    def save_example(self, attn, audio, video, fps, sr, idx):
 
       audio_out = audio.unsqueeze(0)
+      video_out = video * (1/torch.max(video)) # re-normalize it because norm transform is std
+      video_out = torch.clip(video_out, 0., 1.)
+      video_out = (video_out.permute(0,2,3,1) * 255).type(torch.uint8)
+      attn_out = (attn.permute(0,2,3,1) * 255).type(torch.uint8).repeat(1,1,1,3)
 
+      print(f'video {video_out.shape} attn {attn.shape} audio {audio_out.shape}')
       torchvision.io.write_video(f"test_vids/example_{idx}.mp4",
-                                  video,
-                                  fps=info["video_fps"],
+                                  video_out,
+                                  fps=fps,
                                   video_codec="h264",
                                   audio_array=audio_out,
-                                  audio_fps=info["audio_fps"],
+                                  audio_fps=sr,
                                   audio_codec="aac")
 
-      attn_save = attn.permute(0,2,3,1) * 255
-      attn_save = attn_save.type(torch.uint8).repeat(1, 1, 1, 3)
-
-      print(f"max attn {torch.max(attn)} max save {torch.max(attn_save)}")
       torchvision.io.write_video(f"test_vids/example_{idx}_ATTN.mp4",
-                            attn_save,
-                            fps=info["video_fps"],
+                            attn_out,
+                            fps=fps,
                             video_codec="h264",
                             audio_array=audio_out,
-                            audio_fps=info["audio_fps"],
+                            audio_fps=sr,
                             audio_codec="aac")
 
     def __len__(self):
@@ -169,7 +174,7 @@ class AV_Dataset():
 
       while not valid_example:
         # video, audio, info, video_idx = self.video_clips.get_clip(idx)
-        video, audio, info = self.get_av_pair(idx)
+        video, audio, fps, sr = self.get_av_pair(idx)
 
         if audio.shape[0] != 0:
           valid_example = True
@@ -178,26 +183,23 @@ class AV_Dataset():
           idx += 1
 
           
-      video = video.permute(0, 3, 1, 2)
-
-      sr = info["audio_fps"]
-      # print(f'AUDIO FPS {info["audio_fps"]}')
 
       audio = self.audio_transforms(audio, sr)
 
       y_stft = self.stft(audio)
-      print(f'y_stft shape {y_stft.shape}')
       y_stft = y_stft.permute(2, 0, 1)
       x_stft = self.add_noise(y_stft)
 
-      video = video.type(torch.float) / 255.
+      video = video.permute(0, 3, 1, 2).type(torch.float32)
+      video = video / 255.
       video = self.transform(video)
+      print(f'max of video {torch.max(video)}')
 
       # get the video's attention map using DINO model
       attn = self.attention_extractor._inference(video)
 
       if self.save_output_examples:
-        self.save_example(attn, audio, video, info, idx)
+        self.save_example(attn, audio, video, fps, sr, idx)
 
       video = video.permute(1, 0, 2, 3)
 
