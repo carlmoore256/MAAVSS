@@ -24,7 +24,7 @@ if __name__ == "__main__":
   parser.add_argument('--framerate', type=int, default=30, help="video fps")
   parser.add_argument('--framesize', type=int, default=256, help="scaled video frame dims (converted to attention maps)")
   parser.add_argument('--fft_len', type=int, default=256, help="size of fft")
-  parser.add_argument('--hop_ratio', type=int, default=8, help="divisions of fft_len for hop")
+  parser.add_argument('-a', '--hops_per_frame', type=int, default=8, help="num hops per frame (a)")
   parser.add_argument('--samplerate', type=int, default=16000, help="audio samplerate (dependent on dataset)")
   parser.add_argument('--center_fft', type=bool, default=True, help="interlace and center fft")
   parser.add_argument('--use_polar', type=bool, default=False, help="fft uses polar coordinates instead of rectangular")
@@ -38,13 +38,18 @@ if __name__ == "__main__":
 
   DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
+  config.hop = int((config.samplerate/config.framerate)/config.hops_per_frame)
+  # therefore, fft size should = (..., 2, fft_len/2+1, num_frames * a)
+  # make sure num_frames > hop
+  
   dataset = AV_Dataset(
     frames_per_clip=config.num_frames,
     frame_hop=config.frame_hop,
     framerate=config.framerate,
     framesize=config.framesize,
     fft_len=config.fft_len,
-    hop_ratio=config.hop_ratio,
+    hop=config.hop,
+    hops_per_frame=config.hops_per_frame,
     samplerate=config.samplerate,
     noise_std=config.noise_scalar,
     center_fft=config.center_fft,
@@ -63,7 +68,9 @@ if __name__ == "__main__":
   x_stft, y_stft, attn, audio, video = next(dataloader)
 
 
-  model = AV_Model_STFT(x_stft.shape, attn.shape).to(DEVICE)
+  model = AV_Model_STFT(x_stft.shape, attn.shape, config.hops_per_frame).to(DEVICE)
+
+  print(model)
 
   mse_loss = torch.nn.MSELoss()
   # cosine_loss = torch.nn.CosineSimilarity()

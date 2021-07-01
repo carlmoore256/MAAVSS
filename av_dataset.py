@@ -24,7 +24,8 @@ class AV_Dataset():
                  framesize=256,
                  samplerate=16000, 
                  fft_len=512,
-                 hop_ratio=2,
+                 hop=2,
+                 hops_per_frame=None,
                  noise_std=0.01,
                  center_fft=True, 
                  use_polar=True, 
@@ -48,7 +49,9 @@ class AV_Dataset():
         self.noise_std = noise_std
         self.normalize_input_fft = normalize_input_fft
         # self.fft_len = int((frames_per_clip/framerate) * samplerate)
-        self.hop=fft_len//hop_ratio
+        # self.hop=fft_len//hop_ratio
+        self.hop = hop
+        self.hops_per_frame = hops_per_frame
         self.center_fft = center_fft
         self.use_polar = use_polar
         # self.example_idx = 0
@@ -81,11 +84,15 @@ class AV_Dataset():
                                               None)
 
         self.audio_sample_len = int((samplerate/framerate) * frames_per_clip)
+        print(f'\naudio samp len = (samplerate/framerate) * frames_per_clip) = {self.audio_sample_len}')
+        self.audio_sample_len = int(hops_per_frame * hop * frames_per_clip)
+        print(f'audio samp len = (hops_per_frame * hop * frames_per_clip) = {self.audio_sample_len} \n ')
 
         self.save_output_examples = True
 
     def stft(self, audio, normalize=True, polar=False):
       # hop = window.shape[0]//hop_ratio
+      # consider removing +1 bin to make divisible by 2
       spec = torchaudio.functional.spectrogram(audio, 
                                               pad=0,
                                               window=self.window, 
@@ -95,9 +102,17 @@ class AV_Dataset():
                                               power=None, 
                                               normalized=self.normalize_input_fft, 
                                               onesided=True)
+      # fft size should = (..., 2, fft_len/2+1, num_frames * a)
+      # remove extra bin as well as extra frame
+      spec = spec[:-1, :-1, :]
+      print(f'SPEC SHAPE {spec.shape}')
       if self.use_polar:
         spec = torchaudio.functional.magphase(spec)
       return spec
+
+    def istft(self, stft):
+      # remember to add back removed bins with padding
+      return torchaudio.functional.istft(stft)
 
     def audio_transforms(self, audio, sr, normalize=True, compress=False):
       if normalize:
@@ -124,16 +139,16 @@ class AV_Dataset():
       # t1 = time.perf_counter()
       split_path = os.path.split(video_path)
       audio_path = os.path.join(split_path[0], "audio/", f"{split_path[1][:-4]}.wav")
-
+     
+      # audio_info = torchaudio.backend.soundfile_backend.info(audio_path)
+      # sr = audio_info[0].rate
       # even though this is in docs it doesn't work wtf
       # audio, sr = torchaudio.backend.soundfile_backend.load(audio_path,
       #                                                       frame_offset=samples_start,
       #                                                       num_frames=self.audio_sample_len)
       audio, sr = torchaudio.load(audio_path)
-      # audio_info = torchaudio.backend.soundfile_backend.info(audio_path)
-      # sr = audio_info[0].rate
       seconds_start = (clip_idx * self.frame_hop) / info["video_fps"]
-      samples_start = int(seconds_start * sr)
+      samples_start = round(seconds_start * sr)
       audio = audio[:, samples_start:samples_start+self.audio_sample_len]
       audio = torch.sum(audio, dim=0)
       # t2 = time.perf_counter()
@@ -148,7 +163,7 @@ class AV_Dataset():
       video_out = (video_out.permute(0,2,3,1) * 255).type(torch.uint8)
       attn_out = (attn.permute(0,2,3,1) * 255).type(torch.uint8).repeat(1,1,1,3)
 
-      print(f'video {video_out.shape} attn {attn.shape} audio {audio_out.shape}')
+      # print(f'video {video_out.shape} attn {attn.shape} audio {audio_out.shape}')
       torchvision.io.write_video(f"test_vids/example_{idx}.mp4",
                                   video_out,
                                   fps=fps,
@@ -187,13 +202,17 @@ class AV_Dataset():
       audio = self.audio_transforms(audio, sr)
 
       y_stft = self.stft(audio)
-      y_stft = y_stft.permute(2, 0, 1)
+      # permute dims [n_fft, timesteps, channels] -> [channels, timesteps, n_fft]
+      # timesteps now will line up with 3D tensor when its WxH are flattened
+      y_stft = y_stft.permute(2, 1, 0)
+
+      # new dimensionality: time dimension will match video time dim
+      # y_stft = y_stft.permute(1,0,2)
       x_stft = self.add_noise(y_stft)
 
       video = video.permute(0, 3, 1, 2).type(torch.float32)
       video = video / 255.
       video = self.transform(video)
-      print(f'max of video {torch.max(video)}')
 
       # get the video's attention map using DINO model
       attn = self.attention_extractor._inference(video)
@@ -203,8 +222,10 @@ class AV_Dataset():
 
       video = video.permute(1, 0, 2, 3)
 
-      # video = pt_transforms.functional.autocontrast(video)
+      attn = attn.permute(1,0,2,3)
 
+      # video = pt_transforms.functional.autocontrast(video)
+      print(f'x_stft shape {x_stft.shape} y {y_stft.shape} attn {attn.shape}')
       return x_stft, y_stft, attn, audio, video
         
 

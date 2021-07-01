@@ -9,3 +9,4 @@ test_vids/
 fps_info.npy
 video_loader_test.py
 video_loader_pts.py
+model_junkyard.py
