@@ -12,6 +12,7 @@ import utils
 import pickle
 import os
 import time
+import torch.nn.functional as F
 
 class AV_Dataset():
 
@@ -78,7 +79,7 @@ class AV_Dataset():
         if shuffle_files:
           random.shuffle(all_vids)
 
-        self.video_clips = utils.extract_clips(all_vids[:7],
+        self.video_clips = utils.extract_clips(all_vids[:],
                                               frames_per_clip,
                                               frame_hop,
                                               None)
@@ -109,7 +110,15 @@ class AV_Dataset():
 
     def istft(self, stft):
       # remember to add back removed bins with padding
-      return torchaudio.functional.istft(stft)
+      stft = F.pad(stft, (0, 1)).permute(2,1,0)
+      audio = torch.istft(stft.cpu().detach(), 
+                          n_fft=self.fft_len, 
+                          hop_length=self.hop, 
+                          win_length=self.fft_len,
+                          window=self.window,
+                          normalized=self.normalize_input_fft,
+                          onesided=True)
+      return audio
 
     def audio_transforms(self, audio, sr, normalize=True, compress=False):
       if normalize:

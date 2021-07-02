@@ -2,11 +2,13 @@
 # from tensorflow.keras.layers import Input, Conv1D, SeparableConv1D, Conv3D, Reshape, Conv2D
 # from tensorflow.keras.layers import concatenate, Dense, AveragePooling1D, AveragePooling3D, UpSampling3D
 from math import e
+from torch.functional import stft
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
 from torch.nn.modules import module
 from torchsummary import summary
+import copy
 
 class AVSE_Model(nn.Module):
     def __init__(self, a_shape, v_shape):
@@ -98,7 +100,6 @@ class AV_Model_STFT(nn.Module):
             n_div += 1
         print(f'\n NDIV {n_div}')
         modules = []
-        self.audio_net = nn.Sequential()
         in_ch = 2
         for i in range(alpha):
             # out_ch = (alpha - (i + 1)) * 2 + 2
@@ -113,42 +114,53 @@ class AV_Model_STFT(nn.Module):
             # modules.append(nn.MaxPool2d((2,1)))
             in_ch = out_ch
         self.audio_net = nn.Sequential(*modules)
-        print(self.audio_net)
+        # print(self.audio_net)
         summary(self.audio_net.to("cuda"), input_size=(stft_shape[1], stft_shape[2], stft_shape[3]))
 
         x_a = torch.rand(stft_shape).to("cuda")
         with torch.no_grad():
-            x_a = self.audio_net(x_a)
-
-        print(f'x_a SHAPE {x_a.shape}')
+            x_a_enc = self.audio_net(x_a)
 
         modules = []
         spatial_dim = v_shape[3]
         in_ch = 1
 
         # while time_dim > audio_output.shape[-1]:
-        while spatial_dim > x_a.shape[-1]//2:
-
+        while spatial_dim > x_a_enc.shape[-1]//2:
             out_ch = in_ch * 2
-            # modules.append(nn.ZeroPad3d())
             modules.append(nn.Conv3d(in_ch, out_ch, kernel_size=(1,3,3), stride=(1,2,2), padding=(0, 1, 1), padding_mode="zeros"))
             spatial_dim /= 2
             in_ch = out_ch
 
-        modules.append(nn.Flatten(start_dim=-2, end_dim=-1))
-        modules.append(nn.MaxPool2d((1,2)))
         self.visual_net = nn.Sequential(*modules)
-        print(self.visual_net)
         summary(self.visual_net.to("cuda"), input_size=(v_shape[1], v_shape[2], v_shape[3], v_shape[4]))
-
-
         x_v = torch.rand(v_shape).to("cuda")
 
         with torch.no_grad():
-            x_v = self.visual_net(x_v)
+            x_v_enc = self.visual_net(x_v)
             # concatenate along channel axis
-            av_concat = torch.cat((x_a, x_v), dim=1)
-            print(f'feat concat {av_concat.shape}')
+
+        # flatten and pool to match size of encoded audio
+        x_v_flat = torch.flatten(x_v_enc, start_dim=-2, end_dim=-1)
+        print(f'flat - audio sh {x_v_flat.shape} {x_a_enc.shape}')
+        flattened_dim = x_v_flat.shape[-1]
+
+        # at bottom of both a and v net, find difference btwn latent sizes
+        enc_spatial_diff = x_v_flat.shape[-1] - x_a_enc.shape[-1]
+        
+        if x_v_flat.shape[-1] > x_a_enc.shape[-1]:
+            divs = x_v_flat.shape[-1] / x_a_enc.shape[-1]
+            self.pool_v = True
+        else:
+            divs = x_a_enc.shape[-1] / x_v_flat.shape[-1]
+            self.pool_v = False
+
+        self.latentPool = nn.MaxPool2d((1, int(divs)))
+        x_v_flat = self.latentPool(x_v_flat)
+
+        print(f'x_v_flattened shape {x_v_flat.shape}')
+
+        av_concat = torch.cat((x_a_enc, x_v_flat), dim=1)
 
         # now tensor is [..., channels, timesteps, spatial]
         in_ch = av_concat.shape[1]
@@ -164,7 +176,7 @@ class AV_Model_STFT(nn.Module):
             in_ch = out_ch
 
         self.av_featureNet = nn.Sequential(*modules)
-        print(self.av_featureNet)
+        # print(self.av_featureNet)
         summary(self.av_featureNet.to("cuda"), input_size=(av_concat.shape[1], av_concat.shape[2], av_concat.shape[3]))
 
         with torch.no_grad():
@@ -193,18 +205,93 @@ class AV_Model_STFT(nn.Module):
         # self.av_fc1 = nn.Linear(av_features.shape[-1], 512, bias=False).to('cuda')
         # self.av_fc1_ln = nn.LayerNorm(512, elementwise_affine=True).to('cuda')
 
-        self.a_fc_out = nn.Linear(fc_output_neurons, stft_shape[1] * stft_shape[2] * stft_shape[3]).to('cuda')
-        self.v_fc_out = nn.Linear(fc_output_neurons, v_shape[1] * v_shape[2] * v_shape[3] * v_shape[4]).to('cuda')
+        a_head_neurons = x_a_enc.shape[1] * x_a_enc.shape[2] * x_a_enc.shape[3]
+        v_head_neurons = x_v_enc.shape[1] * x_v_enc.shape[2] * x_v_enc.shape[3] * x_v_enc.shape[4]
+        self.a_fc_out = nn.Linear(fc_output_neurons, a_head_neurons).to('cuda')
+        self.v_fc_out = nn.Linear(fc_output_neurons, v_head_neurons).to('cuda')
+
+        x_a_head = self.a_fc_out(av_fc)
+        x_v_head = self.v_fc_out(av_fc)
+
+        x_a_head = torch.reshape(x_a_head, x_a_enc.shape) # remove batch dim
+        x_v_head = torch.reshape(x_v_head, x_v_enc.shape)
+
+        print(f"x_a_head {x_a_head.shape}")
+        print(f"x_v_head {x_v_head.shape}")
+
+        a_head_shape = x_a_head.shape[1:]
+
+        # self.audio_head = nn.Sequential(
+        #     nn.ConvTranspose2d(a_head_shape[0], 2, kernel_size=(3, 3), stride=(2, 2)),
+        #     # nn.ReLU(),
+        # )
+        self.audio_up1= nn.ConvTranspose2d(a_head_shape[0], a_head_shape[0]//2, kernel_size=(3, 3), stride=(2, 2), padding=1).to('cuda')
+        self.audio_up2 = nn.ConvTranspose2d(a_head_shape[0]//2, a_head_shape[0]//4, kernel_size=(3, 3), stride=(2, 2), padding=1).to('cuda')
+        self.audio_up3 = nn.ConvTranspose2d(a_head_shape[0]//4, a_head_shape[0]//8, kernel_size=(3, 3), stride=(1, 2), padding=1).to('cuda')
+        self.audio_up4 = nn.ConvTranspose2d(a_head_shape[0]//8, 2, kernel_size=(3, 3), stride=(1, 2), padding=1).to('cuda')
+
+        
+        x_a_out = self.audio_up1(x_a_head, output_size=(a_head_shape[1] * 2, a_head_shape[2] * 2))
+        x_a_out = self.audio_up2(x_a_out, output_size=(a_head_shape[1] * 4, a_head_shape[2] * 4))
+        x_a_out = self.audio_up3(x_a_out, output_size=(a_head_shape[1] * 4, a_head_shape[2] * 8))
+        x_a_out = self.audio_up4(x_a_out, output_size=(a_head_shape[1] * 4, a_head_shape[2] * 16))
+
+        print(f'x_a_out SHAPE {x_a_out.shape}')
+        
+        # anet_modules = self.audio_net.named_modules()
+        # anet_parameters = self.audio_net.named_parameters()
+
+        modules = []
+
+
+        # modules = []
+        # in_ch = a_head_shape[0]
+        # time_dim = a_head_shape[1]
+
+        # print(f'size to match {stft_shape}')
+
+        # for i in range(alpha):
+        #     # out_ch = (alpha - (i + 1)) * 2 + 2
+        #     out_ch = in_ch // 2
+        #     if i > (alpha-n_div):
+        #         modules.append(nn.Conv2d(in_ch, out_ch, kernel_size=(3, 3), stride=(1, 1)))
+        #         modules.append(nn.Upsample(size=(2, 2)))
+        #     else:
+        #         modules.append(nn.Conv2d(in_ch, out_ch, kernel_size=(3, 3), stride=(1, 1)))
+        #         modules.append(nn.Upsample(size=(1, 2)))
+        #     modules.append(nn.ReLU())
+        #     modules.append(nn.ZeroPad2d((1, 1, 2, 0)))
+        #     # modules.append(nn.MaxPool2d((2,1)))
+        #     in_ch = out_ch
+
+        # self.audio_head = nn.Sequential(*modules)
+
+     
+        # for module in zip(reversed(anet_modules)):
+        #     print(f'\n MODULE : {module[1]} \n')
+        #     modules.append(copy.deepcopy(module))
+
+        # self.a_head = nn.Sequential(
+        #     nn.Conv2,
+        #     # nn.ReLU(),
+        # )
 
         print("\n ######################################################################### \n")
 
     def forward(self, x_a, x_v):
 
-        x_a = self.audio_net(x_a)
-        x_v = self.visual_net(x_v)
+        x_a_enc = self.audio_net(x_a)
+        x_v_enc = self.visual_net(x_v)
+
+        x_v_flat = torch.flatten(x_v_enc, start_dim=-2, end_dim=-1)
+
+        if self.pool_v:
+            x_v_flat = self.latentPool(x_v_flat)
+        else:
+            x_a_enc = self.latentPool(x_a_enc)
 
         # concatenate along channel axis
-        av_concat = torch.cat((x_a, x_v), dim=1)
+        av_concat = torch.cat((x_a_enc, x_v_flat), dim=1)
 
         # get features in 2d convnet
         av_features = self.av_featureNet(av_concat)
@@ -215,17 +302,23 @@ class AV_Model_STFT(nn.Module):
 
         av_fc = self.av_fcNet(av_features)
 
-        x_a = self.a_fc_out(av_fc)
-        x_a = F.leaky_relu(x_a, negative_slope=0.3)
-        x_a = x_a.reshape(self.stft_shape)
+        x_a_head = self.a_fc_out(av_fc)
+        x_a_head = F.leaky_relu(x_a_head, negative_slope=0.3)
+        x_a_head = x_a_head.reshape(x_a_enc.shape)
+        a_head_shape = x_a_head.shape[1:]
+
+        x_a_out = self.audio_up1(x_a_head, output_size=(a_head_shape[1] * 2, a_head_shape[2] * 2))
+        x_a_out = self.audio_up2(x_a_out, output_size=(a_head_shape[1] * 4, a_head_shape[2] * 4))
+        x_a_out = self.audio_up3(x_a_out, output_size=(a_head_shape[1] * 4, a_head_shape[2] * 8))
+        x_a_out = self.audio_up4(x_a_out, output_size=(a_head_shape[1] * 4, a_head_shape[2] * 16))
 
         # reconstruction of video attention frames
-        x_v = self.v_fc_out(x_v)
-        x_v = F.leaky_relu(x_v, negative_slope=0.3) 
-        # reshape tensor into original dimensions
-        x_v = x_v.reshape(self.v_shape)
+        # x_v = self.v_fc_out(x_v)
+        # x_v = F.leaky_relu(x_v, negative_slope=0.3) 
+        # # reshape tensor into original dimensions
+        # x_v = x_v.reshape(self.v_shape)
 
-        return x_a, x_v
+        return x_a_out, x_v
 
 # architecture - Hou et. al
 # Audio-Visual Speech Enhancement Using Multimodal Deep Convolutional Neural Networks

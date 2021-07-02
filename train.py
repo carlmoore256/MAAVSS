@@ -92,7 +92,8 @@ if __name__ == "__main__":
       a_loss = mse_loss(yh_stft, y_stft.to(DEVICE)).sum()
       v_loss = mse_loss(yh_attn, attn.to(DEVICE))
 
-      loss = a_loss + v_loss
+      # loss = a_loss + v_loss
+      loss = a_loss
 
       loss.backward()
 
@@ -164,14 +165,15 @@ if __name__ == "__main__":
         fft_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
         fft_plot = fft_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
 
-        window = torch.hamming_window(config.fft_len)
-        p_audio = torch.istft(yh_stft[0].cpu().detach().permute(1,2,0), 
-                              n_fft=config.fft_len, 
-                              hop_length=config.fft_len//config.hop_ratio, 
-                              win_length=config.fft_len,
-                              window=window,
-                              normalized=config.normalize_fft,
-                              onesided=True)
+        # window = torch.hamming_window(config.fft_len)
+        # p_audio = torch.istft(yh_stft[0].cpu().detach().permute(1,2,0), 
+        #                       n_fft=config.fft_len, 
+        #                       hop_length=config.hop, 
+        #                       win_length=config.fft_len,
+        #                       window=window,
+        #                       normalized=config.normalize_fft,
+        #                       onesided=True)
+        p_audio = dataset.istft(yh_stft[0])
 
         wandb.log( {
             "video_frames": wandb.Image(frame_plot),
