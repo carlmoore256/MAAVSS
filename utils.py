@@ -66,19 +66,26 @@ def get_paired_audio(video_path, extract=True):
   else:
     return None
 
-def filter_valid_fps(all_vids, lower_lim=29.97002997002996, upper_lim=30.):
+def filter_valid_videos(all_vids, fps_lower_lim=29.97002997002996, fps_upper_lim=30., max_frames=None):
   import cv2
   print(f"filtering valid clips")
   valid_clips = []
 
-  for v in all_vids:
+  for i, v in enumerate(all_vids):
       video = cv2.VideoCapture(v)
       fps = video.get(cv2.CAP_PROP_FPS)
-      # num_frames = video.get(cv2.CAP_PROP_FRAME_COUNT)
       video.release()
       # fps_info.append(np.array([fps, num_frames]))
-      if fps >= lower_lim and fps <=upper_lim:
+      if fps >= fps_lower_lim and fps <=fps_upper_lim:
+
+        if max_frames is not None:
+          num_frames = video.get(cv2.CAP_PROP_FRAME_COUNT)
+          if num_frames <= max_frames:
+            valid_clips.append(v)
+        else:
           valid_clips.append(v)
+      if i % 10 == 0:
+        print(f"gathering info, file {i}/{len(all_vids)}")
 
   return valid_clips
 

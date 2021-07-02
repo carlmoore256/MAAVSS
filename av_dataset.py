@@ -55,7 +55,7 @@ class AV_Dataset():
         # filter out clips that are not 30 fps
         if not os.path.isfile("clipcache/valid_clips.obj"):
           all_vids = utils.get_all_files(data_path, "mp4")
-          all_vids = utils.filter_valid_fps(all_vids, lower_lim=29.97002997002996, upper_lim=30.)
+          all_vids = utils.filter_valid_videos(all_vids, lower_lim=29.97002997002996, upper_lim=30.)
           utils.save_cache_obj("clipcache/valid_clips.obj", all_vids)
         else:
           all_vids = utils.load_cache_obj("clipcache/valid_clips.obj")
