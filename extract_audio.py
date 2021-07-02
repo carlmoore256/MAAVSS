@@ -2,28 +2,33 @@
 import utils
 import subprocess
 import os
-
-all_vids = utils.get_all_files("E:/MUSICES", "mp4")
-
-for v in all_vids:
-    directory = os.path.split(v)[0]
-
-    directory = f'{os.path.split(v)[0]}/audio/'
-
-    if not os.path.exists(directory):
-        print(f'making directory: {directory}')
-        os.makedirs(directory)
+import argparse
 
 
-    filename = os.path.split(v)[-1]
-    filename = filename[:-4]
-    filename = f"{filename}.wav"
-    output_file = f'{directory}{filename}'
+def extract(all_vids):
+    for v in all_vids:
+        directory = os.path.split(v)[0]
+        directory = f'{os.path.split(v)[0]}/audio/'
 
-    if os.path.isfile(output_file):
-        print(f"{output_file} already converted, skipping")
-    else:
-        # -vn : no video
-        # -ar : audio samplerate
-        result = subprocess.Popen(["ffmpeg", "-i", v, "-vn", "-ar", "16000", output_file],stdout=subprocess.PIPE)
-        result.wait()
+        if not os.path.exists(directory):
+            print(f'making directory: {directory}')
+            os.makedirs(directory)
+
+        filename = os.path.split(v)[-1]
+        filename = filename[:-4]
+        filename = f"{filename}.wav"
+        output_file = f'{directory}{filename}'
+
+        if os.path.isfile(output_file):
+            print(f"{output_file} already converted, skipping")
+        else:
+            # -vn : no video
+            # -ar : audio samplerate
+            result = subprocess.Popen(["ffmpeg", "-i", v, "-vn", "-ar", "16000", output_file],stdout=subprocess.PIPE)
+            result.wait()
+        
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dir", type=str, default='./data/raw', help="save directory")
+    args = parser.parse_args()
+    extract(utils.get_all_files(args.dir, "mp4"))
