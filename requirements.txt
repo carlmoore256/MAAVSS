@@ -2,3 +2,4 @@ youtube-dl
 torchsummary
 torchaudio
 wandb
+av

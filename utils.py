@@ -5,6 +5,7 @@ import glob
 import matplotlib.pyplot as plt
 import torch
 import pickle
+import subprocess
 import os
 
 def get_all_files(base_dir, ext):
@@ -40,6 +41,30 @@ def load_cache_obj(path):
   filehandler = open(path, 'rb') 
   obj = pickle.load(filehandler)
   return obj
+
+def extract_audio_from_video(input_video, output_file, sr=16000):
+  print(f'extracting audio from {input_video}')
+  result = subprocess.Popen(["ffmpeg", "-i", input_video, "-vn", "-ar", str(sr), output_file],stdout=subprocess.PIPE)
+  result.wait()
+
+# get path to a video examples corresponding audio file
+def get_paired_audio(video_path, extract=True):
+  split_path = os.path.split(video_path)
+  audio_path = os.path.join(split_path[0], "audio/", f"{split_path[1][:-4]}.wav")
+  
+  if os.path.isfile(audio_path):
+    return audio_path
+
+  elif extract:
+    directory = os.path.split(video_path)[0]
+    directory = f'{os.path.split(video_path)[0]}/audio/'
+    if not os.path.exists(directory):
+      print(f'making audio directory: {directory}')
+      os.makedirs(directory)
+    extract_audio_from_video(video_path, audio_path)
+    return audio_path
+  else:
+    return None
 
 def filter_valid_fps(all_vids, lower_lim=29.97002997002996, upper_lim=30.):
   import cv2
