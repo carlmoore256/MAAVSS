@@ -32,7 +32,8 @@ class AV_Dataset():
                  autocontrast=False,
                  shuffle_files=True,
                  num_workers=1, 
-                 data_path="./data/raw"):
+                 data_path="./data/raw",
+                 max_clip_len=None):
 
         # set attention extractor parameters
         self.attention_extractor = VideoAttention(
@@ -55,7 +56,11 @@ class AV_Dataset():
         # filter out clips that are not 30 fps
         if not os.path.isfile("clipcache/valid_clips.obj"):
           all_vids = utils.get_all_files(data_path, "mp4")
-          all_vids = utils.filter_valid_videos(all_vids, lower_lim=29.97002997002996, upper_lim=30.)
+          all_vids = utils.filter_valid_videos(all_vids, 
+                                                fps_lower_lim=29.97002997002996, 
+                                                fps_upper_lim=30., 
+                                                max_frames=max_clip_len)
+                                                
           utils.save_cache_obj("clipcache/valid_clips.obj", all_vids)
         else:
           all_vids = utils.load_cache_obj("clipcache/valid_clips.obj")
