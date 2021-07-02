@@ -221,10 +221,6 @@ class AV_Model_STFT(nn.Module):
 
         a_head_shape = x_a_head.shape[1:]
 
-        # self.audio_head = nn.Sequential(
-        #     nn.ConvTranspose2d(a_head_shape[0], 2, kernel_size=(3, 3), stride=(2, 2)),
-        #     # nn.ReLU(),
-        # )
         self.audio_up1= nn.ConvTranspose2d(a_head_shape[0], a_head_shape[0]//2, kernel_size=(3, 3), stride=(2, 2), padding=1).to('cuda')
         self.audio_up2 = nn.ConvTranspose2d(a_head_shape[0]//2, a_head_shape[0]//4, kernel_size=(3, 3), stride=(2, 2), padding=1).to('cuda')
         self.audio_up3 = nn.ConvTranspose2d(a_head_shape[0]//4, a_head_shape[0]//8, kernel_size=(3, 3), stride=(1, 2), padding=1).to('cuda')
@@ -236,45 +232,21 @@ class AV_Model_STFT(nn.Module):
         x_a_out = self.audio_up3(x_a_out, output_size=(a_head_shape[1] * 4, a_head_shape[2] * 8))
         x_a_out = self.audio_up4(x_a_out, output_size=(a_head_shape[1] * 4, a_head_shape[2] * 16))
 
-        print(f'x_a_out SHAPE {x_a_out.shape}')
-        
-        # anet_modules = self.audio_net.named_modules()
-        # anet_parameters = self.audio_net.named_parameters()
+        v_head_shape = x_v_head.shape[1:]
 
+        self.video_up1= nn.ConvTranspose3d(v_head_shape[0], v_head_shape[0]//2, kernel_size=(1, 3, 3), stride=(1, 4, 4), padding=(0, 1, 1)).to('cuda')
+        self.video_up2 = nn.ConvTranspose3d(v_head_shape[0]//2, v_head_shape[0]//4, kernel_size=(1, 3, 3), stride=(1, 2, 2), padding=(0, 1, 1)).to('cuda')
+        self.video_up3 = nn.ConvTranspose3d(v_head_shape[0]//4, v_head_shape[0]//8, kernel_size=(1, 3, 3), stride=(1, 2, 2), padding=(0, 1, 1)).to('cuda')
+        self.video_up4 = nn.ConvTranspose3d(v_head_shape[0]//8, 1, kernel_size=(3, 3, 3), stride=(1, 2, 2), padding=1).to('cuda')
+
+        x_v_out = self.video_up1(x_v_head, output_size=(v_head_shape[1], v_head_shape[2] * 4, v_head_shape[3] * 4))
+        x_v_out = self.video_up2(x_v_out, output_size=(v_head_shape[1], v_head_shape[2] * 8, v_head_shape[3] * 8))
+        x_v_out = self.video_up3(x_v_out, output_size=(v_head_shape[1], v_head_shape[2] * 16, v_head_shape[3] * 16))
+        x_v_out = self.video_up4(x_v_out, output_size=(v_head_shape[1], v_head_shape[2] * 32, v_head_shape[3] * 32))
+
+        print(f'x v out sh {x_v_out.shape}')
         modules = []
 
-
-        # modules = []
-        # in_ch = a_head_shape[0]
-        # time_dim = a_head_shape[1]
-
-        # print(f'size to match {stft_shape}')
-
-        # for i in range(alpha):
-        #     # out_ch = (alpha - (i + 1)) * 2 + 2
-        #     out_ch = in_ch // 2
-        #     if i > (alpha-n_div):
-        #         modules.append(nn.Conv2d(in_ch, out_ch, kernel_size=(3, 3), stride=(1, 1)))
-        #         modules.append(nn.Upsample(size=(2, 2)))
-        #     else:
-        #         modules.append(nn.Conv2d(in_ch, out_ch, kernel_size=(3, 3), stride=(1, 1)))
-        #         modules.append(nn.Upsample(size=(1, 2)))
-        #     modules.append(nn.ReLU())
-        #     modules.append(nn.ZeroPad2d((1, 1, 2, 0)))
-        #     # modules.append(nn.MaxPool2d((2,1)))
-        #     in_ch = out_ch
-
-        # self.audio_head = nn.Sequential(*modules)
-
-     
-        # for module in zip(reversed(anet_modules)):
-        #     print(f'\n MODULE : {module[1]} \n')
-        #     modules.append(copy.deepcopy(module))
-
-        # self.a_head = nn.Sequential(
-        #     nn.Conv2,
-        #     # nn.ReLU(),
-        # )
 
         print("\n ######################################################################### \n")
 
@@ -312,13 +284,23 @@ class AV_Model_STFT(nn.Module):
         x_a_out = self.audio_up3(x_a_out, output_size=(a_head_shape[1] * 4, a_head_shape[2] * 8))
         x_a_out = self.audio_up4(x_a_out, output_size=(a_head_shape[1] * 4, a_head_shape[2] * 16))
 
+        
+        x_v_head = self.v_fc_out(av_fc)
+        x_v_head = F.leaky_relu(x_v_head, negative_slope=0.3)
+        x_v_head = torch.reshape(x_v_head, x_v_enc.shape)
+        v_head_shape = x_v_head.shape[1:]
+
+        x_v_out = self.video_up1(x_v_head, output_size=(v_head_shape[1], v_head_shape[2] * 4, v_head_shape[3] * 4))
+        x_v_out = self.video_up2(x_v_out, output_size=(v_head_shape[1], v_head_shape[2] * 8, v_head_shape[3] * 8))
+        x_v_out = self.video_up3(x_v_out, output_size=(v_head_shape[1], v_head_shape[2] * 16, v_head_shape[3] * 16))
+        x_v_out = self.video_up4(x_v_out, output_size=(v_head_shape[1], v_head_shape[2] * 32, v_head_shape[3] * 32))
         # reconstruction of video attention frames
         # x_v = self.v_fc_out(x_v)
         # x_v = F.leaky_relu(x_v, negative_slope=0.3) 
         # # reshape tensor into original dimensions
         # x_v = x_v.reshape(self.v_shape)
 
-        return x_a_out, x_v
+        return x_a_out, x_v_out
 
 # architecture - Hou et. al
 # Audio-Visual Speech Enhancement Using Multimodal Deep Convolutional Neural Networks

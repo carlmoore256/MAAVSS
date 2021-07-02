@@ -92,8 +92,8 @@ if __name__ == "__main__":
       a_loss = mse_loss(yh_stft, y_stft.to(DEVICE)).sum()
       v_loss = mse_loss(yh_attn, attn.to(DEVICE))
 
-      # loss = a_loss + v_loss
-      loss = a_loss
+      loss = a_loss + v_loss
+      # loss = a_loss
 
       loss.backward()
 
