@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 # import librosa.display
 import wandb
+import time
 
 if __name__ == "__main__":
   wandb.init(project='MagPhaseLVASE', entity='carl_m', config={"dataset":"MUSIC"})
@@ -93,7 +94,6 @@ if __name__ == "__main__":
       v_loss = mse_loss(yh_attn, attn.to(DEVICE))
 
       loss = a_loss + v_loss
-      # loss = a_loss
 
       loss.backward()
 
@@ -181,3 +181,5 @@ if __name__ == "__main__":
             "audio_input": wandb.Audio(audio[0], sample_rate=config.samplerate),
             "audio_output": wandb.Audio(p_audio, sample_rate=config.samplerate)
         } )
+
+torch.save(model.state_dict(), f"saved_models/model_e{config.epochs}_l{loss}")
