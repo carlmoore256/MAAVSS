@@ -60,7 +60,7 @@ class AV_Dataset():
                                                 fps_lower_lim=29.97002997002996, 
                                                 fps_upper_lim=30., 
                                                 max_frames=max_clip_len)
-                                                
+
           utils.save_cache_obj("clipcache/valid_clips.obj", all_vids)
         else:
           all_vids = utils.load_cache_obj("clipcache/valid_clips.obj")
@@ -86,7 +86,7 @@ class AV_Dataset():
         # self.audio_sample_len = int((samplerate/framerate) * frames_per_clip)
         self.audio_sample_len = int(hops_per_frame * hop * frames_per_clip)
 
-        self.save_output_examples = True
+        self.save_output_examples = False
 
     def stft(self, audio, normalize=True, polar=False):
       # hop = window.shape[0]//hop_ratio
@@ -103,7 +103,6 @@ class AV_Dataset():
       # fft size should = (..., 2, fft_len/2+1, num_frames * a)
       # remove extra bin as well as extra frame
       spec = spec[:-1, :-1, :]
-      print(f'SPEC SHAPE {spec.shape}')
       if self.use_polar:
         spec = torchaudio.functional.magphase(spec)
       return spec

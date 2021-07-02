@@ -31,6 +31,7 @@ if __name__ == "__main__":
   parser.add_argument('--normalize_fft', type=bool, default=True, help="normalize input fft by 1/n")
   parser.add_argument('--noise_scalar', type=float, default=0.1, help="scale gaussian noise by N for data augmentation (applied to x)")
   parser.add_argument('--cb_freq', type=int, default=100, help="wandb callback frequency in epochs")
+  parser.add_argument('--max_clip_len', type=int, default=None, help="maximum clip length to load (speed up loading)")
 
   args = parser.parse_args()
   config = wandb.config
@@ -57,7 +58,8 @@ if __name__ == "__main__":
     normalize_input_fft=config.normalize_fft,
     shuffle_files=True,
     num_workers=1,
-    data_path=config.data_path
+    data_path=config.data_path,
+    max_clip_len=config.max_clip_len
   )
 
   dataloader = torch.utils.data.DataLoader(dataset,
