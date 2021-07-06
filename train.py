@@ -69,7 +69,6 @@ if __name__ == "__main__":
 
   x_stft, y_stft, attn, audio, video = next(dataloader)
 
-
   model = AV_Model_STFT(x_stft.shape, attn.shape, config.hops_per_frame).to(DEVICE)
 
   print(model)
@@ -89,19 +88,26 @@ if __name__ == "__main__":
         print("ERROR LOADING EXAMPLE, SKIPPING...")
         continue
 
-      if i < 300: # train the ae
+      if i < 500: # train the ae
         yh_stft, yh_attn = model(y_stft.to(DEVICE), attn.to(DEVICE), train_ae=True)
+        a_loss = mse_loss(yh_stft, y_stft.to(DEVICE))
+        v_loss = mse_loss(yh_attn, attn.to(DEVICE))
+        a_loss.backward()
+        v_loss.backward()
+        loss = a_loss + v_loss
+        print(f"step:{i} training autoencoder - a_loss:{a_loss} v_loss:{v_loss}")
+
       else:
         yh_stft, yh_attn = model(x_stft.to(DEVICE), attn.to(DEVICE), train_ae=False)
 
-      a_loss = mse_loss(yh_stft, y_stft.to(DEVICE)).sum()
-      v_loss = mse_loss(yh_attn, attn.to(DEVICE))
+        a_loss = mse_loss(yh_stft, y_stft.to(DEVICE)).sum()
+        v_loss = mse_loss(yh_attn, attn.to(DEVICE))
 
-      loss = a_loss + v_loss
+        loss = a_loss + v_loss
 
-      loss.backward()
+        loss.backward()
 
-      print(f"step:{i} loss: {loss} a_loss:{a_loss} v_loss:{v_loss}")
+        print(f"step:{i} loss: {loss} a_loss:{a_loss} v_loss:{v_loss}")
 
       optimizer.step()
 
@@ -134,7 +140,7 @@ if __name__ == "__main__":
         fig=plt.figure(figsize=(8, 3))
         plt.tight_layout()
 
-        x_stft_ex = x_stft[0].cpu().detach().numpy()
+        x_stft_ex = x_stft[0].cpu().detach().numpy().T
         plt.subplot(1,6,1)
         plt.axis("off")
         plt.title("x (real)")
@@ -145,7 +151,7 @@ if __name__ == "__main__":
         plt.title("x (imag)")
         plt.imshow(x_stft_ex[1])
 
-        y_stft_ex = y_stft[0].cpu().detach().numpy()
+        y_stft_ex = y_stft[0].cpu().detach().numpy().T
         plt.subplot(1,6,3)
         plt.axis("off")
         plt.title("y (real)")
@@ -155,28 +161,19 @@ if __name__ == "__main__":
         plt.title("y (imag)")
         plt.imshow(y_stft_ex[1])
 
-        yh_stft_ex = yh_stft[0].cpu().detach().numpy()
+        yh_stft_ex = yh_stft[0].cpu().detach().numpy().T
         plt.subplot(1,6,5)
         plt.axis("off")
-        plt.title("yh (real)")
+        plt.title("ŷ (real)")
         plt.imshow(yh_stft_ex[0])
         plt.subplot(1,6,6)
         plt.axis("off")
-        plt.title("yh (imag)")
+        plt.title("ŷ (imag)")
         plt.imshow(yh_stft_ex[1])
 
         fig.canvas.draw()
         fft_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
         fft_plot = fft_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-
-        # window = torch.hamming_window(config.fft_len)
-        # p_audio = torch.istft(yh_stft[0].cpu().detach().permute(1,2,0), 
-        #                       n_fft=config.fft_len, 
-        #                       hop_length=config.hop, 
-        #                       win_length=config.fft_len,
-        #                       window=window,
-        #                       normalized=config.normalize_fft,
-        #                       onesided=True)
         p_audio = dataset.istft(yh_stft[0])
 
         wandb.log( {

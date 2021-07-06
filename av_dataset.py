@@ -2,16 +2,12 @@ import torchvision
 import torchvision.transforms as pt_transforms
 import torch
 import torchaudio
-import glob
 import numpy as np
 from torchvision.transforms.transforms import Grayscale
 from video_attention import VideoAttention
-from moviepy.editor import VideoFileClip
 import random
 import utilities
-import pickle
 import os
-import time
 import torch.nn.functional as F
 
 class AV_Dataset():
@@ -28,7 +24,7 @@ class AV_Dataset():
                  hops_per_frame=None,
                  noise_std=0.01,
                  center_fft=True, 
-                 use_polar=True, 
+                 use_polar=False, 
                  normalize_input_fft=True,
                  autocontrast=False,
                  shuffle_files=True,
@@ -53,6 +49,8 @@ class AV_Dataset():
         self.center_fft = center_fft
         self.use_polar = use_polar
         self.autocontrast = autocontrast
+
+        self.backend = torchaudio.get_audio_backend()
 
         # filter out clips that are not 30 fps
         if not os.path.isfile("clipcache/valid_clips.obj"):
@@ -79,7 +77,7 @@ class AV_Dataset():
         if shuffle_files:
           random.shuffle(all_vids)
 
-        self.video_clips = utilities.extract_clips(all_vids[:],
+        self.video_clips = utilities.extract_clips(all_vids,
                                               frames_per_clip,
                                               frame_hop,
                                               None)
@@ -104,13 +102,22 @@ class AV_Dataset():
       # fft size should = (..., 2, fft_len/2+1, num_frames * a)
       # remove extra bin as well as extra frame
       spec = spec[:-1, :-1, :]
+
       if self.use_polar:
         spec = torchaudio.functional.magphase(spec)
+        spec = torch.cat((spec[0].unsqueeze(0), spec[1].unsqueeze(0)), dim=0)
       return spec
 
     def istft(self, stft):
       # remember to add back removed bins with padding
       stft = F.pad(stft, (0, 1)).permute(2,1,0)
+      if self.use_polar:
+        mag = stft[:, :, 0]
+        phase = stft[:, :, 1]
+        rectangular = mag(torch.cos(phase) + (1j*torch.sin(phase)))
+        stft = torch.view_as_real(rectangular)
+        # stft = torchaudio.functional.magphase(stft)
+
       audio = torch.istft(stft.cpu().detach(), 
                           n_fft=self.fft_len, 
                           hop_length=self.hop, 
@@ -143,12 +150,18 @@ class AV_Dataset():
         audio = torch.zeros(self.audio_sample_len)
         sr = self.samplerate
       else:
-        audio, sr = torchaudio.load(audio_path)
+        # audio, sr = torchaudio.load(audio_path)
         seconds_start = (clip_idx * self.frame_hop) / info["video_fps"]
-        samples_start = round(seconds_start * sr)
-        audio = audio[:, samples_start:samples_start+self.audio_sample_len]
+        samples_start = round(seconds_start * self.samplerate)
+
+        if self.backend == "sox_io":
+          audio, sr = torchaudio.load(audio_path, frame_offset=samples_start, num_frames=samples_start+self.audio_sample_len)
+        else:
+          audio, sr = torchaudio.load(audio_path)
+          audio = audio[:, samples_start:samples_start+self.audio_sample_len]
+
         audio = torch.sum(audio, dim=0)
-        
+
       return video, audio, info["video_fps"], sr
 
     def save_example(self, attn, audio, video, fps, sr, idx):
@@ -189,7 +202,6 @@ class AV_Dataset():
 
         if audio.shape[0] != 0:
           valid_example = True
-          # raise Exception('spam', 'eggs')
         else:
           idx += 1
 
