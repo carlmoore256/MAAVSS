@@ -12,7 +12,9 @@ import torchvision
 from torchvision import transforms as pth_transforms
 import numpy as np
 
-import dino.utils
+import sys
+sys.path.append("dino/")
+# import dino.utils
 import dino.vision_transformer as vits
 
 
