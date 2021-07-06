@@ -1,6 +1,6 @@
 import torch
 import torchaudio
-import utils
+import utilities
 import cv2
 import os
 import numpy as np
@@ -43,7 +43,7 @@ class DataGenerator():
 
         self.fft_len = int((self.num_vid_frames/self.framerate) * self.samplerate)
 
-        self.all_vids = utils.get_all_files(data_path, "mp4")
+        self.all_vids = utilities.get_all_files(data_path, "mp4")
         print(f"number of videos found: {len(self.all_vids)}")
 
         if shuffle_files:

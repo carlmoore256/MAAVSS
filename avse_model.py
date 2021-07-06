@@ -7,6 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch
 from torch.nn.modules import module
+from torch.nn.modules.activation import ReLU
 from torchsummary import summary
 import copy
 
@@ -128,7 +129,8 @@ class AV_Model_STFT(nn.Module):
         # while time_dim > audio_output.shape[-1]:
         while spatial_dim > x_a_enc.shape[-1]//2:
             out_ch = in_ch * 2
-            modules.append(nn.Conv3d(in_ch, out_ch, kernel_size=(1,3,3), stride=(1,2,2), padding=(0, 1, 1), padding_mode="zeros"))
+            modules.append(nn.Conv3d(in_ch, out_ch, kernel_size=(3,3,3), stride=(1,2,2), padding=(1, 1, 1), padding_mode="zeros"))
+            modules.append(nn.ReLU())
             spatial_dim /= 2
             in_ch = out_ch
 
@@ -173,6 +175,7 @@ class AV_Model_STFT(nn.Module):
             modules.append(nn.ZeroPad2d((1, 1, 0, 0)))
             # kernel size convolves over shared spatial dimension (-1), doesn't touch temporal
             modules.append(nn.Conv2d(in_ch, out_ch, kernel_size=(1, 3), stride=(1, 1)))
+            modules.append(nn.ReLU())
             in_ch = out_ch
 
         self.av_featureNet = nn.Sequential(*modules)
@@ -193,7 +196,7 @@ class AV_Model_STFT(nn.Module):
         self.av_fcNet = nn.Sequential(
             nn.Linear(av_features.shape[-1], fc_output_neurons, bias=False),
             nn.LayerNorm(fc_output_neurons, elementwise_affine=True),
-            nn.LeakyReLU(0.3),
+            nn.ReLU(),
             # nn.Linear(512, fc_output_neurons, bias=False),
             # nn.LayerNorm(fc_output_neurons, elementwise_affine=True),
             # nn.LeakyReLU(),
@@ -245,54 +248,63 @@ class AV_Model_STFT(nn.Module):
         x_v_out = self.video_up4(x_v_out, output_size=(v_head_shape[1], v_head_shape[2] * 64, v_head_shape[3] * 64))
 
         print(f'x v out sh {x_v_out.shape}')
-        modules = []
-
 
         print("\n ######################################################################### \n")
 
-    def forward(self, x_a, x_v):
+    def forward(self, x_a, x_v, train_ae=False):
 
         x_a_enc = self.audio_net(x_a)
         x_v_enc = self.visual_net(x_v)
-
-        x_v_flat = torch.flatten(x_v_enc, start_dim=-2, end_dim=-1)
-
-        if self.pool_v:
-            x_v_flat = self.latentPool(x_v_flat)
-        else:
-            x_a_enc = self.latentPool(x_a_enc)
-
-        # concatenate along channel axis
-        av_concat = torch.cat((x_a_enc, x_v_flat), dim=1)
-
-        # get features in 2d convnet
-        av_features = self.av_featureNet(av_concat)
-
-        # we've condensed dims down to 1, squeeze it out
-        av_features = av_features.squeeze(1)
-        av_features = torch.flatten(av_features, start_dim=-2, end_dim=-1)
-
-        av_fc = self.av_fcNet(av_features)
-
-        x_a_head = self.a_fc_out(av_fc)
-        x_a_head = F.leaky_relu(x_a_head, negative_slope=0.3)
-        x_a_head = x_a_head.reshape(x_a_enc.shape)
-        a_head_shape = x_a_head.shape[1:]
-
-        x_a_out = self.audio_up1(x_a_head, output_size=(a_head_shape[1] * 2, a_head_shape[2] * 2))
-        x_a_out = self.audio_up2(x_a_out, output_size=(a_head_shape[1] * 4, a_head_shape[2] * 4))
-        x_a_out = self.audio_up3(x_a_out, output_size=(a_head_shape[1] * 4, a_head_shape[2] * 8))
-        x_a_out = self.audio_up4(x_a_out, output_size=(a_head_shape[1] * 4, a_head_shape[2] * 16))
-
         
-        x_v_head = self.v_fc_out(av_fc)
-        x_v_head = F.leaky_relu(x_v_head, negative_slope=0.3)
-        x_v_head = torch.reshape(x_v_head, x_v_enc.shape)
+        if not train_ae:
+            x_v_flat = torch.flatten(x_v_enc, start_dim=-2, end_dim=-1)
+
+            if self.pool_v:
+                x_v_flat = self.latentPool(x_v_flat)
+            else:
+                x_a_enc = self.latentPool(x_a_enc)
+
+            # concatenate along channel axis
+            av_concat = torch.cat((x_a_enc, x_v_flat), dim=1)
+
+            # get features in 2d convnet
+            av_features = self.av_featureNet(av_concat)
+
+            # we've condensed dims down to 1, squeeze it out
+            av_features = av_features.squeeze(1)
+            av_features = torch.flatten(av_features, start_dim=-2, end_dim=-1)
+
+            av_fc = self.av_fcNet(av_features)
+            av_fc = F.relu(av_fc)
+
+            x_a_head = self.a_fc_out(av_fc)
+            x_a_head = F.relu(x_a_head)
+            x_a_head = x_a_head.reshape(x_a_enc.shape)
+
+            x_v_head = self.v_fc_out(av_fc)
+            x_v_head = F.relu(x_v_head)
+            x_v_head = torch.reshape(x_v_head, x_v_enc.shape)
+        else: # train the autoencoder
+            x_a_head = x_a_enc
+            x_v_head = x_v_enc
+
+        a_head_shape = x_a_head.shape[1:]
         v_head_shape = x_v_head.shape[1:]
 
+        x_a_out = self.audio_up1(x_a_head, output_size=(a_head_shape[1] * 2, a_head_shape[2] * 2))
+        a_a_out = F.relu(x_a_out)
+        x_a_out = self.audio_up2(x_a_out, output_size=(a_head_shape[1] * 4, a_head_shape[2] * 4))
+        a_a_out = F.relu(x_a_out)
+        x_a_out = self.audio_up3(x_a_out, output_size=(a_head_shape[1] * 4, a_head_shape[2] * 8))
+        a_a_out = F.relu(x_a_out)
+        x_a_out = self.audio_up4(x_a_out, output_size=(a_head_shape[1] * 4, a_head_shape[2] * 16))
+
         x_v_out = self.video_up1(x_v_head, output_size=(v_head_shape[1], v_head_shape[2] * 4, v_head_shape[3] * 4))
+        x_v_out = F.relu(x_v_out)
         x_v_out = self.video_up2(x_v_out, output_size=(v_head_shape[1], v_head_shape[2] * 16, v_head_shape[3] * 16))
+        x_v_out = F.relu(x_v_out)
         x_v_out = self.video_up3(x_v_out, output_size=(v_head_shape[1], v_head_shape[2] * 32, v_head_shape[3] * 32))
+        x_v_out = F.relu(x_v_out)
         x_v_out = self.video_up4(x_v_out, output_size=(v_head_shape[1], v_head_shape[2] * 64, v_head_shape[3] * 64))
         # reconstruction of video attention frames
         # x_v = self.v_fc_out(x_v)

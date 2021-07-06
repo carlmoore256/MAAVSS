@@ -1,6 +1,6 @@
 # download videos from the musices dataset
 import os
-import utils
+import utilities
 import subprocess
 import glob
 import argparse
@@ -28,7 +28,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    links = utils.load_json("MUSICES.json")
+    links = utilities.load_json("MUSICES.json")
 
     classes = links["videos"]
 
@@ -59,7 +59,7 @@ if __name__ == "__main__":
             title = os.path.split(title)[-1]
             title = str(title)[:-1]
 
-            # title = utils.get_video_title(vid_id)
+            # title = utilities.get_video_title(vid_id)
             # print(f"\n FILES IN DIR: {files_in_dir} \n")
             # except:
             #     print("error loading url, skipping")

@@ -6,9 +6,8 @@ from avse_model import AV_Model_STFT
 import argparse
 import matplotlib.pyplot as plt
 import numpy as np
-# import librosa.display
 import wandb
-import time
+import torchaudio
 
 if __name__ == "__main__":
   wandb.init(project='MagPhaseLVASE', entity='carl_m', config={"dataset":"MUSIC"})
@@ -79,6 +78,8 @@ if __name__ == "__main__":
   # cosine_loss = torch.nn.CosineSimilarity()
   optimizer = torch.optim.SGD(model.parameters(), lr=config.learning_rate)
 
+  training_ae = True
+
   for i in range(config.epochs):
       optimizer.zero_grad()
 
@@ -88,7 +89,10 @@ if __name__ == "__main__":
         print("ERROR LOADING EXAMPLE, SKIPPING...")
         continue
 
-      yh_stft, yh_attn = model(x_stft.to(DEVICE), attn.to(DEVICE))
+      if i < 300: # train the ae
+        yh_stft, yh_attn = model(y_stft.to(DEVICE), attn.to(DEVICE), train_ae=True)
+      else:
+        yh_stft, yh_attn = model(x_stft.to(DEVICE), attn.to(DEVICE), train_ae=False)
 
       a_loss = mse_loss(yh_stft, y_stft.to(DEVICE)).sum()
       v_loss = mse_loss(yh_attn, attn.to(DEVICE))

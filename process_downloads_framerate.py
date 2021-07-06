@@ -1,5 +1,5 @@
 # save audio from videos to separate audio directory
-import utils
+import utilities
 import subprocess
 import os
 import argparse
@@ -40,8 +40,8 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    all_vids = utils.get_all_files(args.dlpath, "mp4")
-    all_vids += utils.get_all_files(args.dlpath, "mkv")
+    all_vids = utilities.get_all_files(args.dlpath, "mp4")
+    all_vids += utilities.get_all_files(args.dlpath, "mkv")
 
     for v in all_vids:
         directory = os.path.split(v)[0]

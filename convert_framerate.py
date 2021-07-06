@@ -3,7 +3,7 @@ import utils
 import subprocess
 import os
 
-all_vids = utils.get_all_files("./data/raw", "mp4")
+all_vids = utilities.get_all_files("./data/raw", "mp4")
 
 for v in all_vids:
     directory = os.path.split(v)[0]

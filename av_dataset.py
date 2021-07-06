@@ -8,7 +8,7 @@ from torchvision.transforms.transforms import Grayscale
 from video_attention import VideoAttention
 from moviepy.editor import VideoFileClip
 import random
-import utils
+import utilities
 import pickle
 import os
 import time
@@ -56,15 +56,15 @@ class AV_Dataset():
 
         # filter out clips that are not 30 fps
         if not os.path.isfile("clipcache/valid_clips.obj"):
-          all_vids = utils.get_all_files(data_path, "mp4")
-          all_vids = utils.filter_valid_videos(all_vids, 
+          all_vids = utilities.get_all_files(data_path, "mp4")
+          all_vids = utilities.filter_valid_videos(all_vids, 
                                                 fps_lower_lim=29.97002997002996, 
                                                 fps_upper_lim=30., 
                                                 max_frames=max_clip_len)
 
-          utils.save_cache_obj("clipcache/valid_clips.obj", all_vids)
+          utilities.save_cache_obj("clipcache/valid_clips.obj", all_vids)
         else:
-          all_vids = utils.load_cache_obj("clipcache/valid_clips.obj")
+          all_vids = utilities.load_cache_obj("clipcache/valid_clips.obj")
 
         print(f"number of videos found: {len(all_vids)}")
 
@@ -79,7 +79,7 @@ class AV_Dataset():
         if shuffle_files:
           random.shuffle(all_vids)
 
-        self.video_clips = utils.extract_clips(all_vids[:],
+        self.video_clips = utilities.extract_clips(all_vids[:],
                                               frames_per_clip,
                                               frame_hop,
                                               None)
@@ -138,12 +138,17 @@ class AV_Dataset():
     def get_av_pair(self, idx):
       video, _, info, video_idx, clip_idx = self.video_clips.get_clip(idx)
       video_path = self.video_clips.video_paths[video_idx]
-      audio_path = utils.get_paired_audio(video_path, extract=True)
-      audio, sr = torchaudio.load(audio_path)
-      seconds_start = (clip_idx * self.frame_hop) / info["video_fps"]
-      samples_start = round(seconds_start * sr)
-      audio = audio[:, samples_start:samples_start+self.audio_sample_len]
-      audio = torch.sum(audio, dim=0)
+      audio_path = utilities.get_paired_audio(video_path, extract=True)
+      if audio_path is None:
+        audio = torch.zeros(self.audio_sample_len)
+        sr = self.samplerate
+      else:
+        audio, sr = torchaudio.load(audio_path)
+        seconds_start = (clip_idx * self.frame_hop) / info["video_fps"]
+        samples_start = round(seconds_start * sr)
+        audio = audio[:, samples_start:samples_start+self.audio_sample_len]
+        audio = torch.sum(audio, dim=0)
+        
       return video, audio, info["video_fps"], sr
 
     def save_example(self, attn, audio, video, fps, sr, idx):
