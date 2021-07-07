@@ -208,6 +208,7 @@ class AV_Dataset():
       audio = self.audio_transforms(audio, sr)
 
       y_stft = self.stft(audio)
+      y_stft *= 1/torch.max(torch.abs(y_stft))
       # permute dims [n_fft, timesteps, channels] -> [channels, timesteps, n_fft]
       # timesteps now will line up with 3D tensor when its WxH are flattened
       y_stft = y_stft.permute(2, 1, 0)
@@ -224,6 +225,9 @@ class AV_Dataset():
 
       # get the video's attention map using DINO model
       attn = self.attention_extractor._inference(video)
+
+      attn *= 1/torch.max(attn)
+
 
       if self.save_output_examples:
         self.save_example(attn, audio, video, fps, sr, idx)

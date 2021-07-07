@@ -21,7 +21,7 @@ class AVSE_Model(nn.Module):
         print(f"\nA SHAPE {a_shape}")
         print(f"V SHAPE {v_shape}\n")
 
-        self.audio_net = nn.Sequential(
+        self.audio_encoder = nn.Sequential(
             nn.Conv1d(in_channels=2, out_channels=10, kernel_size=3, stride=1),
             nn.Tanh(),
             nn.AvgPool1d(2),
@@ -34,7 +34,7 @@ class AVSE_Model(nn.Module):
             # nn.Flatten()
         )
 
-        self.visual_net = nn.Sequential(
+        self.visual_encoder = nn.Sequential(
             nn.Conv3d(1, 12, kernel_size=3, stride=(1,2,2), padding_mode="zeros"),
             nn.ReLU(),
             nn.Conv3d(12, 6, kernel_size=(1, 3, 3), stride=(1,2,2), padding_mode="zeros"), # <- this is an issue, is the kernel doing anything in time?
@@ -54,8 +54,8 @@ class AVSE_Model(nn.Module):
 
     def forward(self, x_a, x_v):
 
-        y_a = self.audio_net(x_a)
-        y_v = self.visual_net(x_v)
+        y_a = self.audio_encoder(x_a)
+        y_v = self.visual_encoder(x_v)
 
         # y_v = y_v.squeeze(2) # -> squeeze time dimension?
 
@@ -99,28 +99,28 @@ class AV_Model_STFT(nn.Module):
             # print(st_sh)
             time_dim /= 2
             n_div += 1
-        print(f'\n NDIV {n_div}')
+
         modules = []
         in_ch = 2
         for i in range(alpha):
             # out_ch = (alpha - (i + 1)) * 2 + 2
             out_ch = in_ch * 2
-            modules.append(nn.ZeroPad2d((1, 1, 2, 0)))
+            modules.append(nn.ZeroPad2d((2, 2, 3, 1))) # add 1 to each to increase k size by 2
             if i < n_div:
-                modules.append(nn.Conv2d(in_ch, out_ch, kernel_size=(3, 3), stride=(2, 2)))
+                modules.append(nn.Conv2d(in_ch, out_ch, kernel_size=(5, 5), stride=(2, 2)))
             else:
-                modules.append(nn.Conv2d(in_ch, out_ch, kernel_size=(3, 3), stride=(1, 2)))
+                modules.append(nn.Conv2d(in_ch, out_ch, kernel_size=(5, 5), stride=(1, 2)))
 
             modules.append(nn.ReLU())
             # modules.append(nn.MaxPool2d((2,1)))
             in_ch = out_ch
-        self.audio_net = nn.Sequential(*modules)
-        # print(self.audio_net)
-        summary(self.audio_net.to("cuda"), input_size=(stft_shape[1], stft_shape[2], stft_shape[3]))
+        self.audio_encoder = nn.Sequential(*modules)
+
+        summary(self.audio_encoder.to("cuda"), input_size=(stft_shape[1], stft_shape[2], stft_shape[3]))
 
         x_a = torch.rand(stft_shape).to("cuda")
         with torch.no_grad():
-            x_a_enc = self.audio_net(x_a)
+            x_a_enc = self.audio_encoder(x_a)
 
         modules = []
         spatial_dim = v_shape[3]
@@ -134,12 +134,12 @@ class AV_Model_STFT(nn.Module):
             spatial_dim /= 2
             in_ch = out_ch
 
-        self.visual_net = nn.Sequential(*modules)
-        summary(self.visual_net.to("cuda"), input_size=(v_shape[1], v_shape[2], v_shape[3], v_shape[4]))
+        self.visual_encoder = nn.Sequential(*modules)
+        summary(self.visual_encoder.to("cuda"), input_size=(v_shape[1], v_shape[2], v_shape[3], v_shape[4]))
         x_v = torch.rand(v_shape).to("cuda")
 
         with torch.no_grad():
-            x_v_enc = self.visual_net(x_v)
+            x_v_enc = self.visual_encoder(x_v)
             # concatenate along channel axis
 
         # flatten and pool to match size of encoded audio
@@ -229,6 +229,14 @@ class AV_Model_STFT(nn.Module):
         self.audio_up3 = nn.ConvTranspose2d(a_head_shape[0]//4, a_head_shape[0]//8, kernel_size=(3, 3), stride=(1, 2), padding=1).to('cuda')
         self.audio_up4 = nn.ConvTranspose2d(a_head_shape[0]//8, 2, kernel_size=(3, 3), stride=(1, 2), padding=1).to('cuda')
 
+        self.audio_ae = nn.Sequential(*self.audio_encoder,
+                            self.audio_up1,
+                            self.audio_up2,
+                            self.audio_up3,
+                            self.audio_up4)
+
+
+        print(f'\nAUDIO AUTOENCODER!!! {self.audio_ae}\n')
         
         x_a_out = self.audio_up1(x_a_head, output_size=(a_head_shape[1] * 2, a_head_shape[2] * 2))
         x_a_out = self.audio_up2(x_a_out, output_size=(a_head_shape[1] * 4, a_head_shape[2] * 4))
@@ -246,15 +254,23 @@ class AV_Model_STFT(nn.Module):
         x_v_out = self.video_up2(x_v_out, output_size=(v_head_shape[1], v_head_shape[2] * 16, v_head_shape[3] * 16))
         x_v_out = self.video_up3(x_v_out, output_size=(v_head_shape[1], v_head_shape[2] * 32, v_head_shape[3] * 32))
         x_v_out = self.video_up4(x_v_out, output_size=(v_head_shape[1], v_head_shape[2] * 64, v_head_shape[3] * 64))
+        
+        self.visual_ae = nn.Sequential(*self.visual_encoder,
+                                        self.video_up1,
+                                        self.video_up2,
+                                        self.video_up3,
+                                        self.video_up4)
+        # print(f'x v out sh {x_v_out.shape}')
 
-        print(f'x v out sh {x_v_out.shape}')
+        print(f'\nVISUAL AUTOENCODER!!! {self.visual_ae}\n')
+        
 
         print("\n ######################################################################### \n")
 
     def forward(self, x_a, x_v, train_ae=False):
 
-        x_a_enc = self.audio_net(x_a)
-        x_v_enc = self.visual_net(x_v)
+        x_a_enc = self.audio_encoder(x_a)
+        x_v_enc = self.visual_encoder(x_v)
         
         if not train_ae:
             x_v_flat = torch.flatten(x_v_enc, start_dim=-2, end_dim=-1)
@@ -292,13 +308,14 @@ class AV_Model_STFT(nn.Module):
         v_head_shape = x_v_head.shape[1:]
 
         x_a_out = self.audio_up1(x_a_head, output_size=(a_head_shape[1] * 2, a_head_shape[2] * 2))
-        a_a_out = F.relu(x_a_out)
+        x_a_out = F.relu(x_a_out)
         x_a_out = self.audio_up2(x_a_out, output_size=(a_head_shape[1] * 4, a_head_shape[2] * 4))
-        a_a_out = F.relu(x_a_out)
+        x_a_out = F.relu(x_a_out)
         x_a_out = self.audio_up3(x_a_out, output_size=(a_head_shape[1] * 4, a_head_shape[2] * 8))
-        a_a_out = F.relu(x_a_out)
+        x_a_out = F.relu(x_a_out)
         x_a_out = self.audio_up4(x_a_out, output_size=(a_head_shape[1] * 4, a_head_shape[2] * 16))
 
+        
         x_v_out = self.video_up1(x_v_head, output_size=(v_head_shape[1], v_head_shape[2] * 4, v_head_shape[3] * 4))
         x_v_out = F.relu(x_v_out)
         x_v_out = self.video_up2(x_v_out, output_size=(v_head_shape[1], v_head_shape[2] * 16, v_head_shape[3] * 16))
@@ -306,6 +323,7 @@ class AV_Model_STFT(nn.Module):
         x_v_out = self.video_up3(x_v_out, output_size=(v_head_shape[1], v_head_shape[2] * 32, v_head_shape[3] * 32))
         x_v_out = F.relu(x_v_out)
         x_v_out = self.video_up4(x_v_out, output_size=(v_head_shape[1], v_head_shape[2] * 64, v_head_shape[3] * 64))
+
         # reconstruction of video attention frames
         # x_v = self.v_fc_out(x_v)
         # x_v = F.leaky_relu(x_v, negative_slope=0.3) 
@@ -314,45 +332,15 @@ class AV_Model_STFT(nn.Module):
 
         return x_a_out, x_v_out
 
+
+# class STFT_Autoencoder(nn.Module):
+
+#     def __init__(self):
+#         super(STFT_Autoencoder, self).__init__()
+
+
+
 # architecture - Hou et. al
 # Audio-Visual Speech Enhancement Using Multimodal Deep Convolutional Neural Networks
 # https://arxiv.org/pdf/1703.10893.pdf
 
-# def build_model(in_1_shape, in_2_shape, out_1_shape, out_2_shape, padding="same"):
-
-#     input_a = Input(shape=in_1_shape, name="audio-input")
-#     input_v = Input(shape=in_2_shape, name="video-input")
-
-#     an_0 = Conv1D(10, kernel_size=(9), activation="linear", padding=padding)(input_a)
-#     an_0 = AveragePooling1D(pool_size=2)(an_0)
-#     an_1 = Conv1D(4, kernel_size=5, activation="linear", padding=padding)(an_0)
-
-
-#     vn_0 = Conv3D(12, 9, strides=(1,2,2), padding=padding)(input_v)
-#     vn_1 = Conv3D(12, 9, strides=(2,2,2), padding=padding)(vn_0)
-#     vn_2 = Conv3D(10, 9, strides=(2,2,2), padding=padding)(vn_1)
-#     vn_3 = Conv3D(6, 7, strides=(2,2,2), padding=padding)(vn_2)
-#     vn_4 = Conv3D(4, 5, strides=(2,2,2), padding=padding)(vn_3)
-#     vn_5 = Conv3D(2, 5, strides=(2,2,2), padding=padding)(vn_4)
-
-#     vn_rshp = Reshape((1, 32))(vn_5)
-
-#     concat = concatenate([an_1, vn_rshp])
-
-#     FC1 = Dense(1000, activation="sigmoid")(concat)
-#     FC2 = Dense(512, activation="sigmoid")(FC1)
-
-#     FC3a = Dense(out_1_shape[0] * (out_1_shape[1]//2), activation="linear")(FC2)
-#     FC3a = Reshape((2, 533))(FC3a)
-#     CoutA1 = Conv1D(out_1_shape[1], kernel_size=1, padding=padding)(FC3a)
-
-#     CoutV1 = Reshape((1, 16, 32, 1))(FC2)
-#     CoutV1 = Conv3D(8, kernel_size=5, padding=padding)(CoutV1)
-#     CoutV1 = UpSampling3D(size=(2,4,2))(CoutV1)
-#     CoutV2 = Conv3D(10, kernel_size=5, padding=padding)(CoutV1)
-#     CoutV2 = UpSampling3D(size=(2,4,4))(CoutV2)
-#     CoutV3 = Conv3D(3, kernel_size=3, padding=padding)(CoutV2)
-
-#     model = Model(inputs=[input_a, input_v], outputs=[CoutA1, CoutV3])
-
-#     return model

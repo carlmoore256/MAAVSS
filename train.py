@@ -73,31 +73,46 @@ if __name__ == "__main__":
 
   print(model)
 
+
+
   mse_loss = torch.nn.MSELoss()
   # cosine_loss = torch.nn.CosineSimilarity()
-  optimizer = torch.optim.SGD(model.parameters(), lr=config.learning_rate)
-
+  # optimizer = torch.optim.SGD(model.parameters(), lr=config.learning_rate)
+  optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
+  audio_ae_opt = torch.optim.Adam(model.audio_ae.parameters(), lr=config.learning_rate)
+  visual_ae_opt = torch.optim.Adam(model.visual_ae.parameters(), lr=config.learning_rate)
   training_ae = True
 
   for i in range(config.epochs):
-      optimizer.zero_grad()
+      # optimizer.zero_grad()
 
       try:
         x_stft, y_stft, attn, audio, video = next(dataloader)
       except Exception as e:
-        print("ERROR LOADING EXAMPLE, SKIPPING...")
+        print(f"\nERROR LOADING EXAMPLE: {e}\n")
         continue
 
-      if i < 500: # train the ae
+      if training_ae: # train the ae
+        audio_ae_opt.zero_grad()
+        visual_ae_opt.zero_grad()
+
         yh_stft, yh_attn = model(y_stft.to(DEVICE), attn.to(DEVICE), train_ae=True)
         a_loss = mse_loss(yh_stft, y_stft.to(DEVICE))
         v_loss = mse_loss(yh_attn, attn.to(DEVICE))
         a_loss.backward()
         v_loss.backward()
+        audio_ae_opt.step()
+        visual_ae_opt.step()
+
         loss = a_loss + v_loss
-        print(f"step:{i} training autoencoder - a_loss:{a_loss} v_loss:{v_loss}")
+
+        print(f"step:{i} training autoencoder - loss {loss} a_loss:{a_loss} v_loss:{v_loss}")
+        if loss < 1e-3:
+          print(f'loss has lowered far enough, training main model...')
+          training_ae = False
 
       else:
+        optimizer.zero_grad()
         yh_stft, yh_attn = model(x_stft.to(DEVICE), attn.to(DEVICE), train_ae=False)
 
         a_loss = mse_loss(yh_stft, y_stft.to(DEVICE)).sum()
@@ -106,10 +121,9 @@ if __name__ == "__main__":
         loss = a_loss + v_loss
 
         loss.backward()
+        optimizer.step()
 
         print(f"step:{i} loss: {loss} a_loss:{a_loss} v_loss:{v_loss}")
-
-      optimizer.step()
 
       wandb.log({ "loss": loss,
                   "a_loss": a_loss,
@@ -140,36 +154,36 @@ if __name__ == "__main__":
         fig=plt.figure(figsize=(8, 3))
         plt.tight_layout()
 
-        x_stft_ex = x_stft[0].cpu().detach().numpy().T
+        x_stft_ex = x_stft[0].cpu().detach().numpy()
         plt.subplot(1,6,1)
         plt.axis("off")
         plt.title("x (real)")
-        plt.imshow(x_stft_ex[0])
+        plt.imshow(x_stft_ex[0].T)
 
         plt.subplot(1,6,2)
         plt.axis("off")
         plt.title("x (imag)")
-        plt.imshow(x_stft_ex[1])
+        plt.imshow(x_stft_ex[1].T)
 
-        y_stft_ex = y_stft[0].cpu().detach().numpy().T
+        y_stft_ex = y_stft[0].cpu().detach().numpy()
         plt.subplot(1,6,3)
         plt.axis("off")
         plt.title("y (real)")
-        plt.imshow(y_stft_ex[0])
+        plt.imshow(y_stft_ex[0].T)
         plt.subplot(1,6,4)
         plt.axis("off")
         plt.title("y (imag)")
-        plt.imshow(y_stft_ex[1])
+        plt.imshow(y_stft_ex[1].T)
 
-        yh_stft_ex = yh_stft[0].cpu().detach().numpy().T
+        yh_stft_ex = yh_stft[0].cpu().detach().numpy()
         plt.subplot(1,6,5)
         plt.axis("off")
         plt.title("ŷ (real)")
-        plt.imshow(yh_stft_ex[0])
+        plt.imshow(yh_stft_ex[0].T)
         plt.subplot(1,6,6)
         plt.axis("off")
         plt.title("ŷ (imag)")
-        plt.imshow(yh_stft_ex[1])
+        plt.imshow(yh_stft_ex[1].T)
 
         fig.canvas.draw()
         fft_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
