@@ -404,6 +404,7 @@ class AV_Model_STFT(nn.Module):
 
         return x_a_out, x_v_out
 
+##################################################################################################
 # final version of the model
 # takes in stft and phase motion vectors (phasegram)
 class AV_Fusion_Model(nn.Module):
@@ -419,6 +420,7 @@ class AV_Fusion_Model(nn.Module):
         
         self.stft_shape = stft_shape
         self.pgram_shape = pgram_shape
+        self.latent_channels = latent_channels
 
         ############### PHASEGRAM ENCODER #################
 
@@ -515,13 +517,10 @@ class AV_Fusion_Model(nn.Module):
         summary(self.fusion_net.to("cuda"), 
                 input_size=(latent_channels*2, output_shape[0], output_shape[1]))
 
-        print(f'xv {x_v.shape} xa {x_a.shape}')
         x_av_cat = torch.cat((x_v, x_a), dim=1)
-        print(f"concat shape {x_av_cat.shape}")
 
         with torch.no_grad():
             x_av_fused = self.fusion_net(x_av_cat)
-        print(f'av fused {x_av_fused.shape}')
 
         ############### STFT DECODER #################
 
@@ -577,8 +576,29 @@ class AV_Fusion_Model(nn.Module):
         summary(self.phasegram_autoencoder, 
                 input_size=(pgram_shape[1], pgram_shape[2], pgram_shape[3]))
 
+    def visual_ae_forward(self, x_v):
+        x_v = self.phasegram_autoencoder(x_v)
+        return x_v
+    
+    def audio_ae_forward(self, x_a):
+        x_a = self.stft_autoencoder(x_a)
+        return x_a
 
-    # def forward(self, x_stft, x_phasegram):
+    def forward(self, x_a, x_v):
+        x_a = self.stft_encoder(x_a)
+        x_v = self.phasegram_encoder(x_v)
+
+        x_av_cat = torch.cat((x_v, x_a), dim=1)
+
+        x_av_fused = self.fusion_net(x_av_cat)
+
+        x_a_out = torch.reshape(x_av_fused, 
+                                (x_av_fused.shape[0], self.latent_channels, x_a.shape[2], x_a.shape[3]))
+
+        x_v_out = torch.reshape(x_av_fused, 
+                                (x_av_fused.shape[0], self.latent_channels, x_v.shape[2], x_v.shape[3]))
+        
+        return x_a_out, x_v_out
 
 
 

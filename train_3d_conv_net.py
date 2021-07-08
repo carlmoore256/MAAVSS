@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import wandb
 import utilities
-import torchvision.transforms.functional as TF
 
 if __name__ == "__main__":
     wandb.init(project='AV_Fusion', entity='carl_m', config={"dataset":"MUSIC"})
@@ -43,8 +42,6 @@ if __name__ == "__main__":
     config.hop = int((config.samplerate/config.framerate)/config.hops_per_frame)
     audio_sample_len = int(config.hops_per_frame * config.hop * config.num_frames)
     num_fft_frames = audio_sample_len // config.hop
-
-    preview_dims=(512, 4096)
     
     dataset = Video_Dataset(
         frames_per_clip = config.num_frames,
@@ -96,11 +93,9 @@ if __name__ == "__main__":
             video = d[1]
             y_attn = attn.to(DEVICE)
             # attention frames generate the phasegram
-            y_phasegram = utilities.video_phasegram(y_attn, 
-                                    resize=(config.p_size, config.p_size),
-                                    diff=True,
-                                    cumulative=True)
+            y_phasegram = utilities.video_phasegram(y_attn)
             yh_phasegram = model.visual_ae_forward(y_phasegram)
+            print(f'y_phasegram sh {y_phasegram.shape} yh {yh_phasegram.shape}')
 
             loss = mse_loss(yh_phasegram, y_phasegram)
             loss.backward()
@@ -112,9 +107,31 @@ if __name__ == "__main__":
 
             
             if i % config.cb_freq == 0:
-                frame_plot = utilities.video_phasegram_image(
-                    y_phasegram[0], yh_phasegram[0], attn[0], preview_dims)
-                wandb.log( {"frames": wandb.Image(frame_plot)} )
+                fig=plt.figure(figsize=(config.num_frames, 3))
+                plt.tight_layout()
+
+                pg_img = y_phasegram.permute(0, 2, 1)
+
+                # cols = config.num_frames
+                # rows = 3
+                # for a in range(cols * rows):
+                #     if a < cols:
+                #         img = video[0, 0, a, :, :].cpu().detach().numpy()
+                #     elif a < cols * 2:
+                #         img = attn[0, 0, a%cols, :, :].cpu().detach().numpy()
+                #     else:
+                #         img = yh_attn[0, 0, a%cols, :, :].cpu().detach().numpy()
+
+                #     fig.add_subplot(rows, cols, a+1)
+                #     plt.xticks([])
+                #     plt.yticks([])
+                #     plt.imshow(img)
+                fig.canvas.draw()
+                frame_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+                frame_plot = frame_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+                wandb.log( {
+                    "video_frames": wandb.Image(frame_plot)
+                } )
         
         model.eval()
 
@@ -124,12 +141,8 @@ if __name__ == "__main__":
             video_val = d[1]
             y_attn_val = y_attn_val.to(DEVICE)
             with torch.no_grad():
-                y_pgram_val = utilities.video_phasegram(y_attn_val, 
-                        resize=(config.p_size, config.p_size),
-                        diff=True,
-                        cumulative=True)
-                yh_pgram_val = model.visual_ae_forward(y_pgram_val)
-                val_loss = mse_loss(yh_pgram_val, y_pgram_val)
+                yh_attn_val = model.visual_ae_forward(y_attn_val)
+                val_loss = mse_loss(yh_attn_val, y_attn_val)
             wandb.log({ "val_loss": val_loss } )
 
         avg_loss /= len(train_gen)
@@ -137,35 +150,31 @@ if __name__ == "__main__":
             print(f'saving {wandb.run.name} checkpoint - {avg_loss} avg loss (val)')
             utilities.save_model(f"checkpoints/av-fusion-pgram-ae-{wandb.run.name}", model)
         last_loss = avg_loss
-        
-        frame_plot = utilities.video_phasegram_image(
-            y_pgram_val[0], y_pgram_val[0], y_attn_val[0], preview_dims)
+
+        # if e % config.cb_freq == 0:
+        fig=plt.figure(figsize=(8, 5))
+        plt.tight_layout()
+
+        cols = config.num_frames
+        rows = 3
+        for a in range(cols * rows):
+            if a < cols:
+                img = video_val[0, 0, a, :, :].cpu().detach().numpy()
+            elif a < cols * 2:
+                img = attn_val[0, 0, a%cols, :, :].cpu().detach().numpy()
+            else:
+                img = yh_attn_val[0, 0, a%cols, :, :].cpu().detach().numpy()
+
+        fig.add_subplot(rows, cols, a+1)
+        plt.xticks([])
+        plt.yticks([])
+        plt.imshow(img)
+        fig.canvas.draw()
+        frame_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+        frame_plot = frame_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+
         wandb.log( {
             "video_frames_val": wandb.Image(frame_plot)
         } )
 
     utilities.save_model(f"saved_models/av-fusion-pgram-ae-{wandb.run.name}", model)
-
-
-
-# if e % config.cb_freq == 0:
-# fig=plt.figure(figsize=(8, 5))
-# plt.tight_layout()
-
-# cols = config.num_frames
-# rows = 3
-# for a in range(cols * rows):
-#     if a < cols:
-#         img = video_val[0, 0, a, :, :].cpu().detach().numpy()
-#     elif a < cols * 2:
-#         img = attn_val[0, 0, a%cols, :, :].cpu().detach().numpy()
-#     else:
-#         img = yh_attn_val[0, 0, a%cols, :, :].cpu().detach().numpy()
-
-# fig.add_subplot(rows, cols, a+1)
-# plt.xticks([])
-# plt.yticks([])
-# plt.imshow(img)
-# fig.canvas.draw()
-# frame_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-# frame_plot = frame_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))

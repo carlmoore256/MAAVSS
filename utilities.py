@@ -7,6 +7,8 @@ import torch
 import pickle
 import subprocess
 import os
+import numpy as np
+import torchvision.transforms.functional as TF
 
 def get_all_files(base_dir, ext):
     return glob.glob(f'{base_dir}/*/**/**.{ext}', recursive=True)
@@ -135,3 +137,68 @@ def save_model(path, model):
   while os.path.isfile(path):
     path = f'{path}_(1)'
   torch.save(model.state_dict(), path)
+
+def video_phasegram(frames, resize=None, diff=True, cumulative=True):
+  frames = torch.squeeze(frames, 1)
+  if resize is not None:
+    frames = TF.resize(frames, resize)
+  fft = torch.fft.fftshift(torch.fft.fft2(frames))
+  p = torch.angle(fft)
+  p_flat = torch.flatten(p, start_dim=-2, end_dim=-1)
+  if cumulative:
+    p_flat = torch.cumsum(p_flat, dim=-1)
+    p_flat /= 2. * np.pi * p_flat.shape[-1] # normalize
+  else:
+    p_flat += np.pi
+    p_flat /= np.pi * 2.
+  if diff:
+    p_diff = torch.diff(p_flat, dim=-2)
+    pad = torch.zeros_like(p_diff[:, 0:1, :])
+    phasegram = torch.cat((pad, p_diff), dim=1)
+  else:
+    phasegram = p_flat
+  phasegram = torch.unsqueeze(phasegram, 1)
+  return phasegram
+
+def generate_filmstrip(frames, dims):
+  frames = frames.squeeze(0)
+  filmstrip = torch.zeros((frames.shape[2], frames.shape[1] * frames.shape[0]))
+  for i, f in enumerate(frames):
+    filmstrip[:, i*frames.shape[1]:i*frames.shape[1]+frames.shape[2]] = f
+  filmstrip = TF.resize(filmstrip.unsqueeze(0), dims, interpolation=TF.InterpolationMode.NEAREST)
+  return filmstrip.squeeze(0)
+
+# generate image of phasegram and frames
+def video_phasegram_image(y_phasegram, yh_phasegram, frames, dims=(512, 2048)):
+    fig=plt.figure(figsize=(15, 3))
+    plt.tight_layout()
+    plt.subplots_adjust(wspace=1)
+    pg_y_img = y_phasegram.permute(0, 2, 1)
+    pg_y_img = TF.resize(pg_y_img, dims, interpolation=TF.InterpolationMode.NEAREST)
+    pg_y_img = pg_y_img.cpu().detach().numpy()
+
+    pg_yh_img = yh_phasegram.permute(0, 2, 1)
+    pg_yh_img = TF.resize(pg_yh_img, dims, interpolation=TF.InterpolationMode.NEAREST)
+    pg_yh_img = pg_yh_img.cpu().detach().numpy()
+    filmstrip = generate_filmstrip(frames, dims)
+
+    plt.subplot(3,1,1)
+    plt.title("video frames")
+    plt.imshow(filmstrip)
+    plt.axis("off")
+
+    plt.subplot(3,1,2)
+    plt.title("phasegram (y)")
+    plt.imshow(pg_y_img[0])
+    plt.axis("off")
+
+    plt.subplot(3,1,3)
+    plt.title("phasegram (ŷ)")
+    plt.imshow(pg_yh_img[0])
+    plt.axis("off")
+
+    fig.canvas.draw()
+    frame_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+    frame_plot = frame_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+
+    return frame_plot

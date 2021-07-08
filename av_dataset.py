@@ -30,7 +30,9 @@ class AV_Dataset():
                  shuffle_files=True,
                  num_workers=1, 
                  data_path="./data/raw",
-                 max_clip_len=None):
+                 max_clip_len=None,
+                 pg_diff=True,
+                 pg_cumulative=True):
 
         # set attention extractor parameters
         self.attention_extractor = VideoAttention(
@@ -49,6 +51,8 @@ class AV_Dataset():
         self.center_fft = center_fft
         self.use_polar = use_polar
         self.autocontrast = autocontrast
+        self.pg_diff = pg_diff
+        self.pg_cumulative = pg_cumulative
 
         self.backend = torchaudio.get_audio_backend()
 
@@ -153,15 +157,13 @@ class AV_Dataset():
         # audio, sr = torchaudio.load(audio_path)
         seconds_start = (clip_idx * self.frame_hop) / info["video_fps"]
         samples_start = round(seconds_start * self.samplerate)
-
-        if self.backend == "sox_io":
-          audio, sr = torchaudio.load(audio_path, frame_offset=samples_start, num_frames=samples_start+self.audio_sample_len)
-        else:
-          audio, sr = torchaudio.load(audio_path)
-          audio = audio[:, samples_start:samples_start+self.audio_sample_len]
-
+        # does not work for now
+        # if self.backend == "sox_io":
+        #   audio, sr = torchaudio.load(audio_path, frame_offset=samples_start, num_frames=samples_start+self.audio_sample_len)
+        # else:
+        audio, sr = torchaudio.load(audio_path)
+        audio = audio[:, samples_start:samples_start+self.audio_sample_len]
         audio = torch.sum(audio, dim=0)
-
       return video, audio, info["video_fps"], sr
 
     def save_example(self, attn, audio, video, fps, sr, idx):
@@ -228,12 +230,17 @@ class AV_Dataset():
 
       attn *= 1/torch.max(attn)
 
-
       if self.save_output_examples:
         self.save_example(attn, audio, video, fps, sr, idx)
 
       video = video.permute(1, 0, 2, 3)
       attn = attn.permute(1,0,2,3)
+
+      # consider moving this tensor op to GPU
+      # phasegram = utilities.video_phasegram(attn, 
+      #                                       diff=self.pg_diff, 
+      #                                       cumulative=self.pg_cumulative)
+
       return x_stft, y_stft, attn, audio, video
 
 ########################################################################
@@ -370,7 +377,9 @@ class Video_Dataset():
                  autocontrast=False,
                  shuffle_files=True,
                  data_path="./data/raw",
-                 max_clip_len=None):
+                 max_clip_len=None,
+                 pg_diff=True,
+                 pg_cumulative=True):
 
         # set attention extractor parameters
         self.attention_extractor = VideoAttention(
@@ -380,6 +389,8 @@ class Video_Dataset():
         self.frames_per_clip = frames_per_clip
         self.frame_hop = frame_hop
         self.autocontrast = autocontrast
+        self.pg_diff = pg_diff
+        self.pg_cumulative = pg_cumulative
 
         # filter out clips that are not 30 fps
         if not os.path.isfile("clipcache/valid_clips.obj"):
@@ -429,6 +440,11 @@ class Video_Dataset():
 
       video = video.permute(1, 0, 2, 3)
       attn = attn.permute(1,0,2,3)
+
+      # # consider moving this tensor op to GPU
+      # phasegram = utilities.video_phasegram(attn, 
+      #                                       diff=self.pg_diff, 
+      #                                       cumulative=self.pg_cumulative)
       return attn, video
 
 if __name__ == "__main__":
