@@ -61,10 +61,12 @@ if __name__ == "__main__":
 
     train_gen = torch.utils.data.DataLoader(train_dset,
                                           batch_size=config.batch_size,
-                                          shuffle=True)
+                                          shuffle=True,
+                                          num_workers=0)
     val_gen = torch.utils.data.DataLoader(val_dset,
                                           batch_size=config.batch_size,
-                                          shuffle=True)
+                                          shuffle=True,
+                                          num_workers=0)
 
     x_stft, y_stft, audio = next(iter(train_gen))
 
@@ -115,7 +117,7 @@ if __name__ == "__main__":
 
         if e % config.cb_freq == 0:
             print(f'epoch {e} step {i} loss {loss.sum()}')
-            fig=plt.figure(figsize=(6, 5))
+            fig=plt.figure(figsize=(7, 5))
             plt.tight_layout()
 
             y_stft_ex = y_stft_val[0].cpu().detach().numpy()
@@ -149,4 +151,4 @@ if __name__ == "__main__":
                 "audio_output": wandb.Audio(p_audio, sample_rate=config.samplerate)
             } )
 
-    utilities.save_model(f"saved_models/autoencoder_{wandb.run.name}", model)
+    utilities.save_model(f"saved_models/autoencoder-{wandb.run.name}", model)
