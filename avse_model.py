@@ -256,11 +256,11 @@ class AV_Model_STFT(nn.Module):
 
         v_head_shape = x_v_head.shape[1:]
 
-        self.video_up1= nn.ConvTranspose3d(v_head_shape[0], v_head_shape[0]//2, kernel_size=(1, 3, 3), stride=(1, 4, 4), padding=(0, 1, 1)).to('cuda')
+        self.video_up1= nn.ConvTranspose3d(v_head_shape[0], v_head_shape[0]//2, kernel_size=(3, 3, 3), stride=(1, 4, 4), padding=(1, 1, 1)).to('cuda')
         self.video_up1_norm = nn.BatchNorm3d(v_head_shape[0]//2).to('cuda')
-        self.video_up2 = nn.ConvTranspose3d(v_head_shape[0]//2, v_head_shape[0]//4, kernel_size=(1, 3, 3), stride=(1, 4, 4), padding=(0, 1, 1)).to('cuda')
+        self.video_up2 = nn.ConvTranspose3d(v_head_shape[0]//2, v_head_shape[0]//4, kernel_size=(3, 3, 3), stride=(1, 4, 4), padding=(1, 1, 1)).to('cuda')
         self.video_up2_norm = nn.BatchNorm3d(v_head_shape[0]//4).to('cuda')
-        self.video_up3 = nn.ConvTranspose3d(v_head_shape[0]//4, v_head_shape[0]//8, kernel_size=(1, 3, 3), stride=(1, 2, 2), padding=(0, 1, 1)).to('cuda')
+        self.video_up3 = nn.ConvTranspose3d(v_head_shape[0]//4, v_head_shape[0]//8, kernel_size=(3, 3, 3), stride=(1, 2, 2), padding=(1, 1, 1)).to('cuda')
         self.video_up3_norm = nn.BatchNorm3d(v_head_shape[0]//8).to('cuda')
         self.video_up4 = nn.ConvTranspose3d(v_head_shape[0]//8, 1, kernel_size=(3, 3, 3), stride=(1, 2, 2), padding=1).to('cuda')
 
@@ -320,11 +320,14 @@ class AV_Model_STFT(nn.Module):
         x_v_enc = self.visual_encoder(x_v)
         v_head_shape = x_v_enc.shape[1:]
         x_v_out = self.video_up1(x_v_enc, output_size=(v_head_shape[1], v_head_shape[2] * 4, v_head_shape[3] * 4))
-        x_v_out = F.sigmoid(x_v_out)
+        x_v_out = self.video_up1_norm(x_v_out)
+        x_v_out = F.relu(x_v_out)
         x_v_out = self.video_up2(x_v_out, output_size=(v_head_shape[1], v_head_shape[2] * 16, v_head_shape[3] * 16))
-        x_v_out = F.sigmoid(x_v_out)
+        x_v_out = self.video_up2_norm(x_v_out)
+        x_v_out = F.relu(x_v_out)
         x_v_out = self.video_up3(x_v_out, output_size=(v_head_shape[1], v_head_shape[2] * 32, v_head_shape[3] * 32))
-        x_v_out = F.sigmoid(x_v_out)
+        x_v_out = self.video_up3_norm(x_v_out)
+        x_v_out = F.relu(x_v_out)
         x_v_out = self.video_up4(x_v_out, output_size=(v_head_shape[1], v_head_shape[2] * 64, v_head_shape[3] * 64))
         x_v_out = F.sigmoid(x_v_out)
         return x_v_out

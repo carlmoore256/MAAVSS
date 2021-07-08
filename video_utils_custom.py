@@ -378,6 +378,9 @@ class VideoClips(object):
                 resampling_idx = resampling_idx - resampling_idx[0]
             video = video[resampling_idx]
             info["video_fps"] = self.frame_rate
+
+        # for some reason this needs to be done
+        video = video[:self.num_frames]
         assert len(video) == self.num_frames, "{} x {}".format(
             video.shape, self.num_frames
         )
