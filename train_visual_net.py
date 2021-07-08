@@ -97,7 +97,7 @@ if __name__ == "__main__":
             
             wandb.log({ "loss": loss } )
 
-            print(f'epoch {e} step {i} loss {loss.sum()}')
+            print(f'epoch {e} step {i}/{len(train_gen)} loss {loss.sum()}')
 
             
             if i % config.cb_freq == 0:
