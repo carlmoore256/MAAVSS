@@ -306,6 +306,19 @@ class AV_Model_STFT(nn.Module):
         # x_a_out = self.audio_up4_norm(x_a_out)
         return x_a_out
 
+    def visual_ae_forward(self, x_v):
+        x_v_enc = self.visual_encoder(x_v)
+        v_head_shape = x_v_enc.shape[1:]
+        x_v_out = self.video_up1(x_v_enc, output_size=(v_head_shape[1], v_head_shape[2] * 4, v_head_shape[3] * 4))
+        x_v_out = F.sigmoid(x_v_out)
+        x_v_out = self.video_up2(x_v_out, output_size=(v_head_shape[1], v_head_shape[2] * 16, v_head_shape[3] * 16))
+        x_v_out = F.sigmoid(x_v_out)
+        x_v_out = self.video_up3(x_v_out, output_size=(v_head_shape[1], v_head_shape[2] * 32, v_head_shape[3] * 32))
+        x_v_out = F.sigmoid(x_v_out)
+        x_v_out = self.video_up4(x_v_out, output_size=(v_head_shape[1], v_head_shape[2] * 64, v_head_shape[3] * 64))
+        x_v_out = F.sigmoid(x_v_out)
+        return x_v_out
+
     def forward(self, x_a, x_v, train_ae=False):
 
         x_a_enc = self.audio_encoder(x_a)
@@ -367,7 +380,7 @@ class AV_Model_STFT(nn.Module):
         x_v_out = self.video_up3(x_v_out, output_size=(v_head_shape[1], v_head_shape[2] * 32, v_head_shape[3] * 32))
         x_v_out = F.sigmoid(x_v_out)
         x_v_out = self.video_up4(x_v_out, output_size=(v_head_shape[1], v_head_shape[2] * 64, v_head_shape[3] * 64))
-        x_a_out = F.sigmoid(x_a_out)
+        x_v_out = F.sigmoid(x_v_out)
 
         # reconstruction of video attention frames
         # x_v = self.v_fc_out(x_v)

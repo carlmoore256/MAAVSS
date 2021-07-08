@@ -130,3 +130,8 @@ def extract_clips(all_vids, frames_per_clip, frame_hop, framerate):
     else:
       print("loading video clip slices from cache")
       return load_cache_obj("clipcache/video_clips.obj")
+
+def save_model(path, model):
+  while os.path.isfile(path):
+    path = f'{path}_(1)'
+  torch.save(model.state_dict(), path)

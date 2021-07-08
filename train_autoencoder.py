@@ -7,6 +7,7 @@ import argparse
 import matplotlib.pyplot as plt
 import numpy as np
 import wandb
+import utilities
 
 if __name__ == "__main__":
     wandb.init(project='AV_Fusion', entity='carl_m', config={"dataset":"MUSIC"})
@@ -70,6 +71,10 @@ if __name__ == "__main__":
     model = AV_Model_STFT(x_stft.shape, 
                         [config.batch_size, 1, config.num_frames, config.framesize, config.framesize],
                         config.hops_per_frame).to(DEVICE)
+    
+    if config.saved_model != None:
+        print(f'Loading model weights from {config.saved_model}')
+        model.load_state_dict(torch.load(config.saved_model))
 
     mse_loss = torch.nn.MSELoss()
 
@@ -80,10 +85,9 @@ if __name__ == "__main__":
 
     for e in range(config.epochs):
         model.train()
-
+        
         for i, d in enumerate(train_gen):
             optimizer.zero_grad()
-            # x_stft, y_stft, audio = next(dataloader)
             x_stft = d[0]
             y_stft = d[1]
             audio = d[2]
@@ -93,10 +97,9 @@ if __name__ == "__main__":
             loss.backward()
             optimizer.step()
             
-            if i % config.cb_freq == 0:
-                print(f'epoch {e} step {i} loss {loss.sum()}')
-
             wandb.log({ "loss": loss } )
+
+        print(f'epoch {e} step {i} loss {loss.sum()}')
 
         # validation
         for i, d in enumerate(val_gen):
@@ -110,39 +113,40 @@ if __name__ == "__main__":
                 val_loss = mse_loss(yh_stft_val, y_stft_val)
             wandb.log({ "val_loss": val_loss } )
 
-        
-        fig=plt.figure(figsize=(6, 5))
-        plt.tight_layout()
+        if e % config.cb_freq == 0:
+            print(f'epoch {e} step {i} loss {loss.sum()}')
+            fig=plt.figure(figsize=(6, 5))
+            plt.tight_layout()
 
-        y_stft_ex = y_stft_val[0].cpu().detach().numpy()
-        plt.subplot(1,4,1)
-        plt.axis("off")
-        plt.title("y (real)")
-        plt.imshow(y_stft_ex[0].T)
-        plt.subplot(1,4,2)
-        plt.axis("off")
-        plt.title("y (imag)")
-        plt.imshow(y_stft_ex[1].T)
+            y_stft_ex = y_stft_val[0].cpu().detach().numpy()
+            plt.subplot(1,4,1)
+            plt.axis("off")
+            plt.title("y (real)")
+            plt.imshow(y_stft_ex[0].T)
+            plt.subplot(1,4,2)
+            plt.axis("off")
+            plt.title("y (imag)")
+            plt.imshow(y_stft_ex[1].T)
 
-        yh_stft_ex = yh_stft_val[0].cpu().detach().numpy()
-        plt.subplot(1,4,3)
-        plt.axis("off")
-        plt.title("ŷ (real)")
-        plt.imshow(yh_stft_ex[0].T)
-        plt.subplot(1,4,4)
-        plt.axis("off")
-        plt.title("ŷ (imag)")
-        plt.imshow(yh_stft_ex[1].T)
+            yh_stft_ex = yh_stft_val[0].cpu().detach().numpy()
+            plt.subplot(1,4,3)
+            plt.axis("off")
+            plt.title("ŷ (real)")
+            plt.imshow(yh_stft_ex[0].T)
+            plt.subplot(1,4,4)
+            plt.axis("off")
+            plt.title("ŷ (imag)")
+            plt.imshow(yh_stft_ex[1].T)
 
-        fig.canvas.draw()
-        fft_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-        fft_plot = fft_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-        p_audio = dataset.istft(yh_stft_val[0])
+            fig.canvas.draw()
+            fft_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+            fft_plot = fft_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+            p_audio = dataset.istft(yh_stft_val[0])
 
-        wandb.log( {
-            "fft_frames_val": wandb.Image(fft_plot),
-            "audio_input": wandb.Audio(audio_val[0], sample_rate=config.samplerate),
-            "audio_output": wandb.Audio(p_audio, sample_rate=config.samplerate)
-        } )
+            wandb.log( {
+                "fft_frames_val": wandb.Image(fft_plot),
+                "audio_input": wandb.Audio(audio_val[0], sample_rate=config.samplerate),
+                "audio_output": wandb.Audio(p_audio, sample_rate=config.samplerate)
+            } )
 
-    torch.save(model.state_dict(), f"saved_models/autoencoder_audio_e{config.epochs}_l{loss}")
+    utilities.save_model(f"saved_models/autoencoder_{wandb.run.name}", model)
