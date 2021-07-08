@@ -11,6 +11,7 @@ video_loader_test.py
 video_loader_pts.py
 model_junkyard.py
 clipcache/*
+!clipcache/.gitkeep
 saved_models/*
 !saved_models/.gitkeep
 checkpoints/*
