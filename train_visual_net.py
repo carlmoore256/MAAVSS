@@ -2,7 +2,7 @@ from random import sample
 import torch
 from torch.utils import data
 from av_dataset import Video_Dataset
-from avse_model import AV_Model_STFT
+from avse_model import AV_Fusion_Model
 import argparse
 import matplotlib.pyplot as plt
 import numpy as np
@@ -21,6 +21,7 @@ if __name__ == "__main__":
     parser.add_argument('--frame_hop', type=int, default=2, help="hop between each clip example in a video")
     parser.add_argument('--framerate', type=int, default=30, help="video fps")
     parser.add_argument('--framesize', type=int, default=256, help="scaled video frame dims (converted to attention maps)")
+    parser.add_argument('--p_size', type=int, default=64, help="downsampled phasegram size")
     parser.add_argument('--autocontrast', type=bool, default=False, help="automatic video contrast")
     
     parser.add_argument('--fft_len', type=int, default=256, help="size of fft")
@@ -66,8 +67,8 @@ if __name__ == "__main__":
 
     attn, video = next(iter(train_gen))
 
-    model = AV_Model_STFT([config.batch_size, 2, num_fft_frames, config.fft_len//2], 
-                        [config.batch_size, 1, config.num_frames, config.framesize, config.framesize],
+    model = AV_Fusion_Model([config.batch_size, 2, num_fft_frames, config.fft_len//2], 
+                        [config.batch_size, 1, config.num_frames, config.p_size*config.p_size],
                         config.hops_per_frame).to(DEVICE)
     
     if config.saved_model != None:
@@ -140,7 +141,7 @@ if __name__ == "__main__":
         avg_loss /= len(train_gen)
         if avg_loss < last_loss:
             print(f'saving {wandb.run.name} checkpoint - {avg_loss} avg loss (val)')
-            utilities.save_model(f"checkpoints/v-ae-{wandb.run.name}", model)
+            utilities.save_model(f"checkpoints/av-fusion-pgram-ae-{wandb.run.name}", model)
         last_loss = avg_loss
 
         # if e % config.cb_freq == 0:
@@ -169,4 +170,4 @@ if __name__ == "__main__":
             "video_frames_val": wandb.Image(frame_plot)
         } )
 
-    utilities.save_model(f"saved_models/v-ae-{wandb.run.name}", model)
+    utilities.save_model(f"saved_models/av-fusion-pgram-ae-{wandb.run.name}", model)

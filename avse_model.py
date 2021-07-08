@@ -127,7 +127,7 @@ class AV_Model_STFT(nn.Module):
         # while time_dim > audio_output.shape[-1]:
         while spatial_dim > x_a_enc.shape[-1]//2:
             out_ch = in_ch * 2
-            modules.append(nn.Conv3d(in_ch, out_ch, kernel_size=(3,3,3), stride=(1,2,2), padding=(1, 1, 1), padding_mode="zeros"))
+            modules.append(nn.Conv3d(in_ch, out_ch, kernel_size=(3,3,3), stride=(1,1,1), padding=(1, 1, 1), padding_mode="zeros"))
             modules.append(nn.BatchNorm3d(out_ch))
             modules.append(nn.ReLU())
             modules.append(nn.MaxPool3d(kernel_size=(1,2,2)))
@@ -404,39 +404,181 @@ class AV_Model_STFT(nn.Module):
 
         return x_a_out, x_v_out
 
+# final version of the model
+# takes in stft and phase motion vectors (phasegram)
+class AV_Fusion_Model(nn.Module):
 
-# class STFT_Autoencoder(nn.Module):
+    def __init__(self, 
+                stft_shape, 
+                pgram_shape, 
+                alpha, 
+                latent_channels=64,
+                fc_size=4096):
 
-#     def __init__(self, stft_shape):
-#         super(STFT_Autoencoder, self).__init__()
-            
+        super(AV_Fusion_Model, self).__init__()
+        
+        self.stft_shape = stft_shape
+        self.pgram_shape = pgram_shape
 
-#         self.stft_shape = stft_shape
+        ############### PHASEGRAM ENCODER #################
 
-#         time_dim = stft_shape[2]
-#         n_div = 0
+        self.phasegram_encoder = nn.Sequential(
+            nn.Conv2d(1, 8, kernel_size=(3, 9), stride=(1,4), padding=(1, 4)),
+            nn.BatchNorm2d(8),
+            nn.Tanh(),
+            nn.Conv2d(8, 32, kernel_size=(3, 9), stride=(1,4), padding=(1, 4)),
+            nn.BatchNorm2d(32),
+            nn.Tanh(),
+            nn.Conv2d(32, 64, kernel_size=(3, 9), stride=(1,4), padding=(1, 4)),
+            nn.BatchNorm2d(64),
+            nn.Tanh(),
+            nn.Conv2d(64, latent_channels, kernel_size=(3, 9), stride=(1,4), padding=(1, 4)),
+            nn.BatchNorm2d(latent_channels),
+            nn.Tanh()
+        ).to("cuda")        
+        
+        ############### PHASEGRAM DECODER #################
 
-#         while time_dim > v_shape[2]:
-#             # print(st_sh)
-#             time_dim /= 2
-#             n_div += 1
+        self.phasegram_decoder = nn.Sequential(
+            nn.ConvTranspose2d(latent_channels, 32, kernel_size=(3, 5), stride=(1,4), padding=(1, 1), output_padding=(0,1)),
+            nn.BatchNorm2d(32),
+            nn.Tanh(),
+            nn.ConvTranspose2d(32, 16, kernel_size=(3, 5), stride=(1,4), padding=(1, 1), output_padding=(0,1)),
+            nn.BatchNorm2d(16),
+            nn.Tanh(),
+            nn.ConvTranspose2d(16, 8, kernel_size=(3, 5), stride=(1,4), padding=(1, 1), output_padding=(0,1)),
+            nn.BatchNorm2d(8),
+            nn.Tanh(),
+            nn.ConvTranspose2d(8, 1, kernel_size=(3, 5), stride=(1,4), padding=(1, 1), output_padding=(0,1)),
+            # nn.BatchNorm2d(1),
+            nn.Tanh()
+        ).to("cuda")
 
-#         modules = []
-#         in_ch = 2
-#         for i in range(alpha):
-#             # out_ch = (alpha - (i + 1)) * 2 + 2
-#             out_ch = in_ch * 2
-#             modules.append(nn.ZeroPad2d((2, 2, 3, 1))) # add 1 to each to increase k size by 2
-#             if i < n_div:
-#                 modules.append(nn.Conv2d(in_ch, out_ch, kernel_size=(5, 5), stride=(2, 2)))
-#             else:
-#                 modules.append(nn.Conv2d(in_ch, out_ch, kernel_size=(5, 5), stride=(1, 2)))
-            
-#             modules.append(nn.BatchNorm2d(out_ch))
-#             modules.append(nn.Tanh())
-#             # modules.append(nn.MaxPool2d((2,1)))
-#             in_ch = out_ch
-#         self.audio_encoder = nn.Sequential(*modules)
+        x_v = torch.rand(pgram_shape).to("cuda")
+
+        with torch.no_grad():
+            x_v = self.phasegram_encoder(x_v)
+
+        ############### STFT ENCODER #################
+
+        modules = []
+        in_ch = 2
+        spatial_dim = stft_shape[-1]
+        temporal_dim = stft_shape[-2]
+        output_shape = [temporal_dim, spatial_dim]
+
+        while output_shape != list(x_v.shape[2:]):
+            out_ch = in_ch * 4
+            if out_ch > latent_channels:
+                out_ch = latent_channels
+                
+            stride = [1, 1]
+
+            if output_shape[0] > x_v.shape[-2]:
+                stride[0] = 2
+                output_shape[0] = output_shape[0] // 2
+            if output_shape[1] > x_v.shape[-1]:
+                stride[1] = 2
+                output_shape[1] = output_shape[1] // 2
+
+            modules.append(nn.Conv2d(in_ch, out_ch, 
+                                    kernel_size=(5, 5), 
+                                    stride=tuple(stride), 
+                                    padding=(2,2)))
+            modules.append(nn.BatchNorm2d(out_ch))
+            modules.append(nn.Tanh())
+            in_ch = out_ch
+
+        self.stft_encoder = nn.Sequential(*modules).to("cuda")
+
+        x_a = torch.rand(stft_shape).to("cuda")
+        with torch.no_grad():
+            x_a = self.stft_encoder(x_a)
+
+        ################ AV FUSION NET #################
+
+        out_ch = fc_size // (output_shape[0] * output_shape[1])
+        # our spatial dim must be low enough to accomadate fc size
+
+        self.fusion_net = nn.Sequential(
+            nn.Conv2d(in_channels=latent_channels * 2, 
+                      out_channels=out_ch, 
+                      kernel_size=(3,3), 
+                      padding=(1,1)),
+            nn.BatchNorm2d(out_ch),
+            nn.ReLU(),
+            nn.Flatten(1, 3),
+            nn.Linear(fc_size, fc_size),
+            nn.ReLU()
+        ).to("cuda")
+
+        summary(self.fusion_net.to("cuda"), 
+                input_size=(latent_channels*2, output_shape[0], output_shape[1]))
+
+        print(f'xv {x_v.shape} xa {x_a.shape}')
+        x_av_cat = torch.cat((x_v, x_a), dim=1)
+        print(f"concat shape {x_av_cat.shape}")
+
+        with torch.no_grad():
+            x_av_fused = self.fusion_net(x_av_cat)
+        print(f'av fused {x_av_fused.shape}')
+
+        ############### STFT DECODER #################
+
+        modules = []
+        in_ch = latent_channels
+        encoded_shape = [x_a.shape[2], x_a.shape[3]]
+
+        while encoded_shape != [temporal_dim, spatial_dim]:
+            out_ch = in_ch // 4
+            if out_ch < stft_shape[1]:
+                out_ch = stft_shape[1]
+            stride = [1, 1]
+            out_padding = [0, 0]
+            if encoded_shape[0] < temporal_dim:
+                stride[0] = 2
+                out_padding[0] = 1
+                encoded_shape[0] = encoded_shape[0] * 2
+            if encoded_shape[1] < spatial_dim:
+                stride[1] = 2
+                out_padding[1] = 1
+                encoded_shape[1] = encoded_shape[1] * 2
+            print(encoded_shape)
+            modules.append(nn.ConvTranspose2d(in_ch, out_ch, 
+                                    kernel_size=(5, 5), 
+                                    stride=tuple(stride), 
+                                    padding=(2,2),
+                                    output_padding=tuple(out_padding)))
+            modules.append(nn.BatchNorm2d(out_ch))
+            modules.append(nn.Tanh())
+            in_ch = out_ch
+
+        self.stft_decoder = nn.Sequential(*modules)
+
+        ############### STFT & PHASEGRAM AUTOENCODERS #################
+
+        self.stft_autoencoder = nn.Sequential(
+            *self.stft_encoder,
+            *self.stft_decoder
+        ).to("cuda")
+
+        print(f'\n ########## STFT AUTOENCODER ##########\n')
+        print(f'Input shape {stft_shape}')
+        summary(self.stft_autoencoder, 
+                input_size=(stft_shape[1], stft_shape[2], stft_shape[3]))
+
+        self.phasegram_autoencoder = nn.Sequential(
+            *self.phasegram_encoder,
+            *self.phasegram_decoder
+        ).to("cuda")
+
+        print(f'\n ########## PHASEGRAM AUTOENCODER ##########\n')
+        print(f'Input shape {pgram_shape}')
+        summary(self.phasegram_autoencoder, 
+                input_size=(pgram_shape[1], pgram_shape[2], pgram_shape[3]))
+
+
+    # def forward(self, x_stft, x_phasegram):
 
 
 
