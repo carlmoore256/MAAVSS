@@ -130,6 +130,7 @@ class AV_Model_STFT(nn.Module):
             modules.append(nn.Conv3d(in_ch, out_ch, kernel_size=(3,3,3), stride=(1,2,2), padding=(1, 1, 1), padding_mode="zeros"))
             modules.append(nn.BatchNorm3d(out_ch))
             modules.append(nn.ReLU())
+            modules.append(nn.MaxPool3d(kernel_size=(1,2,2)))
             spatial_dim /= 2
             in_ch = out_ch
 
