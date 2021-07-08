@@ -84,12 +84,10 @@ if __name__ == "__main__":
 
     model.toggle_av_grads(False)
     model.toggle_visual_grads(False)
-    last_loss = 1e5
 
     for e in range(config.epochs):
         model.train()
-        avg_loss = 0
-
+        
         for i, d in enumerate(train_gen):
             optimizer.zero_grad()
             x_stft = d[0]
@@ -115,15 +113,8 @@ if __name__ == "__main__":
             with torch.no_grad():
                 yh_stft_val = model.audio_ae_forward(y_stft_val)
                 val_loss = mse_loss(yh_stft_val, y_stft_val)
-                avg_loss += val_loss
             wandb.log({ "val_loss": val_loss } )
 
-        avg_loss /= len(train_gen)
-        if avg_loss < last_loss:
-            print(f'saving {wandb.run.name} checkpoint - {avg_loss} avg loss (val)')
-            utilities.save_model(f"checkpoints/{wandb.run.name}", model)
-
-        last_loss = avg_loss
         if e % config.cb_freq == 0:
             print(f'epoch {e} step {i} loss {loss.sum()}')
             fig=plt.figure(figsize=(7, 5))
