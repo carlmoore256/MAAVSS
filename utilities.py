@@ -170,9 +170,7 @@ def generate_filmstrip(frames, dims):
 
 # generate image of phasegram and frames
 def video_phasegram_image(y_phasegram, yh_phasegram, frames, dims=(512, 2048)):
-    fig=plt.figure(figsize=(15, 3))
-    plt.tight_layout()
-    plt.subplots_adjust(wspace=1)
+
     pg_y_img = y_phasegram.permute(0, 2, 1)
     pg_y_img = TF.resize(pg_y_img, dims, interpolation=TF.InterpolationMode.NEAREST)
     pg_y_img = pg_y_img.cpu().detach().numpy()
@@ -182,11 +180,16 @@ def video_phasegram_image(y_phasegram, yh_phasegram, frames, dims=(512, 2048)):
     pg_yh_img = pg_yh_img.cpu().detach().numpy()
     filmstrip = generate_filmstrip(frames, dims)
 
+    fig=plt.figure(figsize=(7, 3))
+    plt.tight_layout()
+    plt.subplots_adjust(wspace=1)
+
     plt.subplot(3,1,1)
     plt.title("video frames")
     plt.imshow(filmstrip)
     plt.axis("off")
 
+    plt.subplots_adjust(wspace=1)
     plt.subplot(3,1,2)
     plt.title("phasegram (y)")
     plt.imshow(pg_y_img[0])

@@ -377,9 +377,7 @@ class Video_Dataset():
                  autocontrast=False,
                  shuffle_files=True,
                  data_path="./data/raw",
-                 max_clip_len=None,
-                 pg_diff=True,
-                 pg_cumulative=True):
+                 max_clip_len=None):
 
         # set attention extractor parameters
         self.attention_extractor = VideoAttention(
@@ -389,8 +387,6 @@ class Video_Dataset():
         self.frames_per_clip = frames_per_clip
         self.frame_hop = frame_hop
         self.autocontrast = autocontrast
-        self.pg_diff = pg_diff
-        self.pg_cumulative = pg_cumulative
 
         # filter out clips that are not 30 fps
         if not os.path.isfile("clipcache/valid_clips.obj"):
@@ -440,11 +436,7 @@ class Video_Dataset():
 
       video = video.permute(1, 0, 2, 3)
       attn = attn.permute(1,0,2,3)
-
-      # # consider moving this tensor op to GPU
-      # phasegram = utilities.video_phasegram(attn, 
-      #                                       diff=self.pg_diff, 
-      #                                       cumulative=self.pg_cumulative)
+      
       return attn, video
 
 if __name__ == "__main__":

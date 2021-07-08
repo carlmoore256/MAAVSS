@@ -17,6 +17,8 @@ if __name__ == "__main__":
     parser.add_argument('-b', '--batch_size', type=int, default=4, metavar='N')
     parser.add_argument('-lr', '--learning_rate', type=float, default=1e-5)
     parser.add_argument("-e", '--epochs', type=int, default=10, help="epochs")
+    parser.add_argument("-s", '--steps_per_epoch', type=int, default=50, help="steps/epoch, validation at epoch end")
+    parser.add_argument("-v", '--val_steps', type=int, default=8, help="validation steps/epoch")
     parser.add_argument('--data_path', type=str, default="data/raw", help="path to dataset")
     parser.add_argument('--num_frames', type=int, default=6, help="number of consecutive video frames (converted to attention maps)")
     parser.add_argument('--frame_hop', type=int, default=2, help="hop between each clip example in a video")
@@ -85,15 +87,21 @@ if __name__ == "__main__":
     # model.toggle_av_grads(False)
     # model.toggle_audio_grads(False)
 
+    t_gen = iter(train_gen)
+    v_gen = iter(val_gen)
+    last_loss = 1e6
+
     for e in range(config.epochs):
+        if e + 1 * config.steps_per_epoch > len(train_gen):
+            t_gen = iter(train_gen)
+        if e + 1 * config.val_steps > len(val_gen):
+            v_gen = iter(val_gen)
+
         model.train()
-        avg_loss = 0
 
-        for i, d in enumerate(train_gen):
+        for i in range(config.steps_per_epoch):
             optimizer.zero_grad()
-
-            attn = d[0]
-            video = d[1]
+            attn, video = next(t_gen)
             y_attn = attn.to(DEVICE)
             # attention frames generate the phasegram
             y_phasegram = utilities.video_phasegram(y_attn, 
@@ -108,21 +116,19 @@ if __name__ == "__main__":
             
             wandb.log({ "loss": loss } )
 
-            print(f'epoch {e} step {i}/{len(train_gen)} loss {loss.sum()}')
-
-            
             if i % config.cb_freq == 0:
+                print(f'epoch {e} step {i}/{config.steps_per_epoch} loss {loss.sum()}')
                 frame_plot = utilities.video_phasegram_image(
                     y_phasegram[0], yh_phasegram[0], attn[0], preview_dims)
                 wandb.log( {"frames": wandb.Image(frame_plot)} )
         
         model.eval()
+        avg_loss = 0
 
         # validation
-        for i, d in enumerate(val_gen):
-            attn_val = d[0]
-            video_val = d[1]
-            y_attn_val = y_attn_val.to(DEVICE)
+        for i in range(config.val_steps):
+            attn_val, video_val = next(v_gen)
+            y_attn_val = attn_val.to(DEVICE)
             with torch.no_grad():
                 y_pgram_val = utilities.video_phasegram(y_attn_val, 
                         resize=(config.p_size, config.p_size),
@@ -130,12 +136,14 @@ if __name__ == "__main__":
                         cumulative=True)
                 yh_pgram_val = model.visual_ae_forward(y_pgram_val)
                 val_loss = mse_loss(yh_pgram_val, y_pgram_val)
-            wandb.log({ "val_loss": val_loss } )
+            avg_loss += val_loss
+            wandb.log({ "val_loss": val_loss })
 
-        avg_loss /= len(train_gen)
+        avg_loss /= config.val_steps
+
         if avg_loss < last_loss:
             print(f'saving {wandb.run.name} checkpoint - {avg_loss} avg loss (val)')
-            utilities.save_model(f"checkpoints/av-fusion-pgram-ae-{wandb.run.name}", model)
+            utilities.save_model(f"checkpoints/avf-v-ae-{wandb.run.name}", model)
         last_loss = avg_loss
         
         frame_plot = utilities.video_phasegram_image(
@@ -144,28 +152,4 @@ if __name__ == "__main__":
             "video_frames_val": wandb.Image(frame_plot)
         } )
 
-    utilities.save_model(f"saved_models/av-fusion-pgram-ae-{wandb.run.name}", model)
-
-
-
-# if e % config.cb_freq == 0:
-# fig=plt.figure(figsize=(8, 5))
-# plt.tight_layout()
-
-# cols = config.num_frames
-# rows = 3
-# for a in range(cols * rows):
-#     if a < cols:
-#         img = video_val[0, 0, a, :, :].cpu().detach().numpy()
-#     elif a < cols * 2:
-#         img = attn_val[0, 0, a%cols, :, :].cpu().detach().numpy()
-#     else:
-#         img = yh_attn_val[0, 0, a%cols, :, :].cpu().detach().numpy()
-
-# fig.add_subplot(rows, cols, a+1)
-# plt.xticks([])
-# plt.yticks([])
-# plt.imshow(img)
-# fig.canvas.draw()
-# frame_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-# frame_plot = frame_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    utilities.save_model(f"saved_models/avf-v-ae-{wandb.run.name}", model)
