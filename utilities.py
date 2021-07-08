@@ -133,9 +133,10 @@ def extract_clips(all_vids, frames_per_clip, frame_hop, framerate):
       print("loading video clip slices from cache")
       return load_cache_obj("clipcache/video_clips.obj")
 
-def save_model(path, model):
-  while os.path.isfile(path):
-    path = f'{path}_(1)'
+def save_model(path, model, overwrite=False):
+  # if not overwrite:
+  #   while os.path.isfile(path):
+  #     path = f'{path}_(1)'
   torch.save(model.state_dict(), path)
 
 def video_phasegram(frames, resize=None, diff=True, cumulative=True):
@@ -205,3 +206,32 @@ def video_phasegram_image(y_phasegram, yh_phasegram, frames, dims=(512, 2048)):
     frame_plot = frame_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
 
     return frame_plot
+
+def stft_ae_image_callback(y_stft, yh_stft):
+  fig=plt.figure(figsize=(7, 5))
+  plt.tight_layout()
+
+  y_stft_ex = y_stft.cpu().detach().numpy()
+  plt.subplot(1,4,1)
+  plt.axis("off")
+  plt.title("y (real)")
+  plt.imshow(y_stft_ex[0].T)
+  plt.subplot(1,4,2)
+  plt.axis("off")
+  plt.title("y (imag)")
+  plt.imshow(y_stft_ex[1].T)
+
+  yh_stft_ex = yh_stft.cpu().detach().numpy()
+  plt.subplot(1,4,3)
+  plt.axis("off")
+  plt.title("ŷ (real)")
+  plt.imshow(yh_stft_ex[0].T)
+  plt.subplot(1,4,4)
+  plt.axis("off")
+  plt.title("ŷ (imag)")
+  plt.imshow(yh_stft_ex[1].T)
+
+  fig.canvas.draw()
+  fft_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+  fft_plot = fft_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+  return fft_plot
