@@ -453,7 +453,7 @@ class AV_Fusion_Model(nn.Module):
             nn.Tanh(),
             nn.ConvTranspose2d(8, 1, kernel_size=(3, 5), stride=(1,4), padding=(1, 1), output_padding=(0,1)),
             # nn.BatchNorm2d(1),
-            nn.Tanh()
+            # nn.Tanh()
         ).to("cuda")
 
         x_v = torch.rand(pgram_shape).to("cuda")
@@ -542,12 +542,12 @@ class AV_Fusion_Model(nn.Module):
                 stride[1] = 2
                 out_padding[1] = 1
                 encoded_shape[1] = encoded_shape[1] * 2
-            print(encoded_shape)
             modules.append(nn.ConvTranspose2d(in_ch, out_ch, 
                                     kernel_size=(5, 5), 
                                     stride=tuple(stride), 
                                     padding=(2,2),
                                     output_padding=tuple(out_padding)))
+            # if encoded_shape != [temporal_dim, spatial_dim]:
             modules.append(nn.BatchNorm2d(out_ch))
             modules.append(nn.Tanh())
             in_ch = out_ch

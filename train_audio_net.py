@@ -17,8 +17,6 @@ if __name__ == "__main__":
     parser.add_argument('-b', '--batch_size', type=int, default=4, metavar='N')
     parser.add_argument('-lr', '--learning_rate', type=float, default=1e-5)
     parser.add_argument("-e", '--epochs', type=int, default=10, help="epochs")
-    parser.add_argument("-s", '--steps_per_epoch', type=int, default=50, help="steps/epoch, validation at epoch end")
-    parser.add_argument("-v", '--val_steps', type=int, default=8, help="validation steps/epoch")
     parser.add_argument('--cb_freq', type=int, default=100, help="wandb callback frequency in epochs")
     parser.add_argument('--split', type=float, default=0.8, help="train/val split")
     
@@ -131,7 +129,7 @@ if __name__ == "__main__":
             avg_loss += val_loss
             wandb.log({ "val_loss": val_loss })
 
-        avg_loss /= config.val_steps
+        avg_loss /= len(val_gen)
 
         if avg_loss < last_loss:
             print(f'saving {wandb.run.name} checkpoint - {avg_loss} avg loss (val)')
