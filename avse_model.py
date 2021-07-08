@@ -110,8 +110,9 @@ class AV_Model_STFT(nn.Module):
                 modules.append(nn.Conv2d(in_ch, out_ch, kernel_size=(5, 5), stride=(2, 2)))
             else:
                 modules.append(nn.Conv2d(in_ch, out_ch, kernel_size=(5, 5), stride=(1, 2)))
-
-            modules.append(nn.ReLU())
+            
+            modules.append(nn.BatchNorm2d(out_ch))
+            modules.append(nn.Tanh())
             # modules.append(nn.MaxPool2d((2,1)))
             in_ch = out_ch
         self.audio_encoder = nn.Sequential(*modules)
@@ -130,6 +131,7 @@ class AV_Model_STFT(nn.Module):
         while spatial_dim > x_a_enc.shape[-1]//2:
             out_ch = in_ch * 2
             modules.append(nn.Conv3d(in_ch, out_ch, kernel_size=(3,3,3), stride=(1,2,2), padding=(1, 1, 1), padding_mode="zeros"))
+            modules.append(nn.BatchNorm3d(out_ch))
             modules.append(nn.ReLU())
             spatial_dim /= 2
             in_ch = out_ch
@@ -224,19 +226,28 @@ class AV_Model_STFT(nn.Module):
 
         a_head_shape = x_a_head.shape[1:]
 
-        self.audio_up1= nn.ConvTranspose2d(a_head_shape[0], a_head_shape[0]//2, kernel_size=(3, 3), stride=(2, 2), padding=1).to('cuda')
-        self.audio_up2 = nn.ConvTranspose2d(a_head_shape[0]//2, a_head_shape[0]//4, kernel_size=(3, 3), stride=(2, 2), padding=1).to('cuda')
-        self.audio_up3 = nn.ConvTranspose2d(a_head_shape[0]//4, a_head_shape[0]//8, kernel_size=(3, 3), stride=(1, 2), padding=1).to('cuda')
+        self.audio_up1= nn.ConvTranspose2d(a_head_shape[0], a_head_shape[0]//2, kernel_size=(5, 5), stride=(2, 2), padding=2).to('cuda')
+        self.audio_up1_norm = nn.BatchNorm2d(a_head_shape[0]//2)
+        self.audio_up2 = nn.ConvTranspose2d(a_head_shape[0]//2, a_head_shape[0]//4, kernel_size=(5, 5), stride=(2, 2), padding=2).to('cuda')
+        self.audio_up2_norm = nn.BatchNorm2d(a_head_shape[0]//4)
+        self.audio_up3 = nn.ConvTranspose2d(a_head_shape[0]//4, a_head_shape[0]//8, kernel_size=(5, 5), stride=(1, 2), padding=2).to('cuda')
+        self.audio_up3_norm = nn.BatchNorm2d(a_head_shape[0]//8)
         self.audio_up4 = nn.ConvTranspose2d(a_head_shape[0]//8, 2, kernel_size=(3, 3), stride=(1, 2), padding=1).to('cuda')
+        self.audio_up4_norm = nn.BatchNorm2d(2)
+
+        # self.audio_decoder = nn.Sequential(
+        #     nn.ConvTranspose2d(a_head_shape[0], a_head_shape[0]//2, kernel_size=(3, 3), stride=(2, 2), padding=1, output_padding=1),
+        #     nn.Tanh(),
+        #     nn.ConvTranspose2d(a_head_shape[0]//2, a_head_shape[0]//4, kernel_size=(3, 3), stride=(2, 2), padding=1, output_padding=1),
+        #     nn.Tanh(),
+        #      nn.ConvTranspose2d(a_head_shape[0]//4, a_head_shape[0]//8, kernel_size=(3, 3), stride=(1, 2), padding=1)
+        # )
 
         self.audio_ae = nn.Sequential(*self.audio_encoder,
                             self.audio_up1,
                             self.audio_up2,
                             self.audio_up3,
                             self.audio_up4)
-
-
-        print(f'\nAUDIO AUTOENCODER!!! {self.audio_ae}\n')
         
         x_a_out = self.audio_up1(x_a_head, output_size=(a_head_shape[1] * 2, a_head_shape[2] * 2))
         x_a_out = self.audio_up2(x_a_out, output_size=(a_head_shape[1] * 4, a_head_shape[2] * 4))
@@ -260,12 +271,40 @@ class AV_Model_STFT(nn.Module):
                                         self.video_up2,
                                         self.video_up3,
                                         self.video_up4)
-        # print(f'x v out sh {x_v_out.shape}')
+        # print(f'x v out sh {x_v_out.shape}')        
 
-        print(f'\nVISUAL AUTOENCODER!!! {self.visual_ae}\n')
-        
 
         print("\n ######################################################################### \n")
+
+    def toggle_av_grads(self, toggle):
+        for param in self.av_featureNet.parameters():
+            param.requires_grad = toggle
+            
+        for param in self.a_fc_out.parameters():
+            param.requires_grad = toggle
+
+        for param in self.v_fc_out.parameters():
+            param.requires_grad = toggle
+
+    def toggle_visual_grads(self, toggle):
+        for param in self.visual_ae:
+            param.requires_grad = toggle
+    
+    def audio_ae_forward(self, x_a):
+        x_a_enc = self.audio_encoder(x_a)
+        a_head_shape = x_a_enc.shape[1:]
+        x_a_out = self.audio_up1(x_a_enc, output_size=(a_head_shape[1] * 2, a_head_shape[2] * 2))
+        x_a_out = self.audio_up1_norm(x_a_out)
+        x_a_out = F.tanh(x_a_out)
+        x_a_out = self.audio_up2(x_a_out, output_size=(a_head_shape[1] * 4, a_head_shape[2] * 4))
+        x_a_out = self.audio_up2_norm(x_a_out)
+        x_a_out = F.tanh(x_a_out)
+        x_a_out = self.audio_up3(x_a_out, output_size=(a_head_shape[1] * 4, a_head_shape[2] * 8))
+        x_a_out = self.audio_up3_norm(x_a_out)
+        x_a_out = F.tanh(x_a_out)
+        x_a_out = self.audio_up4(x_a_out, output_size=(a_head_shape[1] * 4, a_head_shape[2] * 16))
+        # x_a_out = self.audio_up4_norm(x_a_out)
+        return x_a_out
 
     def forward(self, x_a, x_v, train_ae=False):
 
@@ -308,21 +347,27 @@ class AV_Model_STFT(nn.Module):
         v_head_shape = x_v_head.shape[1:]
 
         x_a_out = self.audio_up1(x_a_head, output_size=(a_head_shape[1] * 2, a_head_shape[2] * 2))
-        x_a_out = F.relu(x_a_out)
+        x_a_out = self.audio_up1_norm(x_a_out)
+        x_a_out = F.tanh(x_a_out)
         x_a_out = self.audio_up2(x_a_out, output_size=(a_head_shape[1] * 4, a_head_shape[2] * 4))
-        x_a_out = F.relu(x_a_out)
+        x_a_out = self.audio_up2_norm(x_a_out)
+        x_a_out = F.tanh(x_a_out)
         x_a_out = self.audio_up3(x_a_out, output_size=(a_head_shape[1] * 4, a_head_shape[2] * 8))
-        x_a_out = F.relu(x_a_out)
+        x_a_out = self.audio_up3_norm(x_a_out)
+        x_a_out = F.tanh(x_a_out)
         x_a_out = self.audio_up4(x_a_out, output_size=(a_head_shape[1] * 4, a_head_shape[2] * 16))
+        # x_a_out = self.audio_up4_norm(x_a_out)
+        # x_a_out = F.tanh(x_a_out)
 
         
         x_v_out = self.video_up1(x_v_head, output_size=(v_head_shape[1], v_head_shape[2] * 4, v_head_shape[3] * 4))
-        x_v_out = F.relu(x_v_out)
+        x_v_out = F.sigmoid(x_v_out)
         x_v_out = self.video_up2(x_v_out, output_size=(v_head_shape[1], v_head_shape[2] * 16, v_head_shape[3] * 16))
-        x_v_out = F.relu(x_v_out)
+        x_v_out = F.sigmoid(x_v_out)
         x_v_out = self.video_up3(x_v_out, output_size=(v_head_shape[1], v_head_shape[2] * 32, v_head_shape[3] * 32))
-        x_v_out = F.relu(x_v_out)
+        x_v_out = F.sigmoid(x_v_out)
         x_v_out = self.video_up4(x_v_out, output_size=(v_head_shape[1], v_head_shape[2] * 64, v_head_shape[3] * 64))
+        x_a_out = F.sigmoid(x_a_out)
 
         # reconstruction of video attention frames
         # x_v = self.v_fc_out(x_v)
@@ -335,8 +380,37 @@ class AV_Model_STFT(nn.Module):
 
 # class STFT_Autoencoder(nn.Module):
 
-#     def __init__(self):
+#     def __init__(self, stft_shape):
 #         super(STFT_Autoencoder, self).__init__()
+            
+
+#         self.stft_shape = stft_shape
+
+#         time_dim = stft_shape[2]
+#         n_div = 0
+
+#         while time_dim > v_shape[2]:
+#             # print(st_sh)
+#             time_dim /= 2
+#             n_div += 1
+
+#         modules = []
+#         in_ch = 2
+#         for i in range(alpha):
+#             # out_ch = (alpha - (i + 1)) * 2 + 2
+#             out_ch = in_ch * 2
+#             modules.append(nn.ZeroPad2d((2, 2, 3, 1))) # add 1 to each to increase k size by 2
+#             if i < n_div:
+#                 modules.append(nn.Conv2d(in_ch, out_ch, kernel_size=(5, 5), stride=(2, 2)))
+#             else:
+#                 modules.append(nn.Conv2d(in_ch, out_ch, kernel_size=(5, 5), stride=(1, 2)))
+            
+#             modules.append(nn.BatchNorm2d(out_ch))
+#             modules.append(nn.Tanh())
+#             # modules.append(nn.MaxPool2d((2,1)))
+#             in_ch = out_ch
+#         self.audio_encoder = nn.Sequential(*modules)
+
 
 
 

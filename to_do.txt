@@ -1,0 +1,8 @@
+to do
+
+validation data
+fix dino references and submodule
+autoencoder training
+audio thresholding
+video reject
+load async

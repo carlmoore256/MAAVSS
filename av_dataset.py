@@ -208,7 +208,7 @@ class AV_Dataset():
       audio = self.audio_transforms(audio, sr)
 
       y_stft = self.stft(audio)
-      y_stft *= 1/torch.max(torch.abs(y_stft))
+      # y_stft *= 1/torch.max(torch.abs(y_stft))
       # permute dims [n_fft, timesteps, channels] -> [channels, timesteps, n_fft]
       # timesteps now will line up with 3D tensor when its WxH are flattened
       y_stft = y_stft.permute(2, 1, 0)
@@ -235,6 +235,129 @@ class AV_Dataset():
       video = video.permute(1, 0, 2, 3)
       attn = attn.permute(1,0,2,3)
       return x_stft, y_stft, attn, audio, video
+
+########################################################################
+# use to train stft autoencoder
+class STFT_Dataset():
+  def __init__(self,
+              samplerate=16000,
+              fft_len=512,
+              hop=2,
+              audio_sample_len=0,
+              noise_std=0.1,
+              normalize_input_fft=True,
+              normalize_output_fft=False,
+              use_polar=False,
+              data_path='',
+              max_clip_len=None,
+              split=0.8):
+
+    self.samplerate = samplerate
+    self.fft_len = fft_len
+    self.hop = hop
+    self.audio_sample_len=audio_sample_len
+    self.noise_std = noise_std
+    self.normalize_input_fft = normalize_input_fft
+    self.normalize_output_fft = normalize_output_fft
+    self.use_polar = use_polar
+
+    self.window = torch.hamming_window(self.fft_len)
+
+
+    # filter out clips that are not 30 fps
+    if not os.path.isfile("clipcache/valid_clips.obj"):
+      all_vids = utilities.get_all_files(data_path, "mp4")
+      all_vids = utilities.filter_valid_videos(all_vids, 
+                                            fps_lower_lim=29.97002997002996, 
+                                            fps_upper_lim=30., 
+                                            max_frames=max_clip_len)
+
+      utilities.save_cache_obj("clipcache/valid_clips.obj", all_vids)
+    else:
+      all_vids = utilities.load_cache_obj("clipcache/valid_clips.obj")
+
+    # random.shuffle(all_vids) # shuffle between validation split
+    # split_loc = int(len(all_vids)*split)
+    # self.train_vids = all_vids[:split_loc]
+    # self.val_vids = all_vids[split_loc:]
+    self.all_vids = all_vids
+
+  def audio_transforms(self, audio, sr, normalize=True, compress=False):
+    if normalize:
+      audio *= torch.max(torch.abs(audio))
+    if sr != self.samplerate:
+      resamp = torchaudio.transforms.Resample(orig_freq=sr, new_freq=self.samplerate)
+      audio = resamp(audio)
+    if compress:
+      audio = torchaudio.functional.contrast(audio) # applies compression
+    return audio
+
+  def add_noise(self, tensor):
+    noise = torch.randn(tensor.shape) * self.noise_std
+    a_noise = tensor + noise
+    return a_noise
+
+  def istft(self, stft):
+    # remember to add back removed bins with padding
+    stft = F.pad(stft, (0, 1)).permute(2,1,0)
+    if self.use_polar:
+      mag = stft[:, :, 0]
+      phase = stft[:, :, 1]
+      rectangular = mag(torch.cos(phase) + (1j*torch.sin(phase)))
+      stft = torch.view_as_real(rectangular)
+      # stft = torchaudio.functional.magphase(stft)
+
+    audio = torch.istft(stft.cpu().detach(), 
+                        n_fft=self.fft_len, 
+                        hop_length=self.hop, 
+                        win_length=self.fft_len,
+                        window=self.window,
+                        normalized=self.normalize_input_fft,
+                        onesided=True)
+    return audio
+
+  def stft(self, audio, normalize=True, polar=False):
+    # consider removing +1 bin to make divisible by 2
+    spec = torchaudio.functional.spectrogram(audio, 
+                                            pad=0,
+                                            window=self.window, 
+                                            n_fft=self.fft_len, 
+                                            hop_length=self.hop, 
+                                            win_length=self.window.shape[0], 
+                                            power=None, 
+                                            normalized=self.normalize_input_fft, 
+                                            onesided=True)
+    # fft size should = (..., 2, fft_len/2+1, num_frames * a)
+    spec = spec[:-1, :-1, :]
+
+    if self.use_polar:
+      spec = torchaudio.functional.magphase(spec)
+      spec = torch.cat((spec[0].unsqueeze(0), spec[1].unsqueeze(0)), dim=0)
+    return spec
+
+  def get_example(self, idx):
+    # if train:
+    audio_path = utilities.get_paired_audio(self.all_vids[idx], extract=True)
+    info = torchaudio.info(audio_path)
+    sr = info.sample_rate
+    samples_start = np.random.randint(0,high=info.num_frames-self.audio_sample_len-1)
+    audio, sr = torchaudio.load(audio_path, samples_start, num_frames=self.audio_sample_len)
+    audio = torch.sum(audio, dim=0)
+    y_stft = self.stft(audio)
+    y_stft = y_stft.permute(2, 1, 0)
+    if self.normalize_output_fft:
+      y_stft *= 1/torch.max(torch.abs(y_stft))
+    x_stft = self.add_noise(y_stft)
+    return x_stft, y_stft, audio
+
+  # def get_val_example(self, idx):
+  #   return self.get_example(idx, train=False)
+    
+  def __len__(self):
+    return len(self.all_vids)
+
+  def __getitem__(self, idx):
+    return self.get_example(idx)
         
 
 if __name__ == "__main__":

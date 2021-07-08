@@ -10,7 +10,7 @@ import wandb
 import torchaudio
 
 if __name__ == "__main__":
-  wandb.init(project='MagPhaseLVASE', entity='carl_m', config={"dataset":"MUSIC"})
+  wandb.init(project='AV_Fusion', entity='carl_m', config={"dataset":"MUSIC"})
 
   # IF CHANING NUM_FRAMES, delete cached video frames
 
@@ -82,6 +82,7 @@ if __name__ == "__main__":
   audio_ae_opt = torch.optim.Adam(model.audio_ae.parameters(), lr=config.learning_rate)
   visual_ae_opt = torch.optim.Adam(model.visual_ae.parameters(), lr=config.learning_rate)
   training_ae = True
+  model.toggle_av_grads(False)
 
   for i in range(config.epochs):
       # optimizer.zero_grad()
@@ -92,13 +93,17 @@ if __name__ == "__main__":
         print(f"\nERROR LOADING EXAMPLE: {e}\n")
         continue
 
+      y_stft.to(DEVICE)
+      x_stft.to(DEVICE)
+      attn.to(DEVICE)
+
       if training_ae: # train the ae
         audio_ae_opt.zero_grad()
         visual_ae_opt.zero_grad()
 
-        yh_stft, yh_attn = model(y_stft.to(DEVICE), attn.to(DEVICE), train_ae=True)
-        a_loss = mse_loss(yh_stft, y_stft.to(DEVICE))
-        v_loss = mse_loss(yh_attn, attn.to(DEVICE))
+        yh_stft, yh_attn = model(y_stft, attn, train_ae=True)
+        a_loss = mse_loss(yh_stft, y_stft)
+        v_loss = mse_loss(yh_attn, attn)
         a_loss.backward()
         v_loss.backward()
         audio_ae_opt.step()
@@ -109,14 +114,16 @@ if __name__ == "__main__":
         print(f"step:{i} training autoencoder - loss {loss} a_loss:{a_loss} v_loss:{v_loss}")
         if loss < 1e-3:
           print(f'loss has lowered far enough, training main model...')
+          model.toggle_av_grads(True)
           training_ae = False
 
       else:
         optimizer.zero_grad()
-        yh_stft, yh_attn = model(x_stft.to(DEVICE), attn.to(DEVICE), train_ae=False)
+        yh_stft, yh_attn = model(x_stft, attn, train_ae=False)
 
-        a_loss = mse_loss(yh_stft, y_stft.to(DEVICE)).sum()
-        v_loss = mse_loss(yh_attn, attn.to(DEVICE))
+        # A LOSS AS A SUM MIGHT BE AN ISSUE?
+        a_loss = mse_loss(yh_stft, y_stft).sum()
+        v_loss = mse_loss(yh_attn, attn)
 
         loss = a_loss + v_loss
 
