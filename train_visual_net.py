@@ -98,6 +98,32 @@ if __name__ == "__main__":
             wandb.log({ "loss": loss } )
 
             print(f'epoch {e} step {i} loss {loss.sum()}')
+
+            
+            if i % config.cb_freq == 0:
+                fig=plt.figure(figsize=(config.num_frames, 3))
+                plt.tight_layout()
+
+                cols = config.num_frames
+                rows = 3
+                for a in range(cols * rows):
+                    if a < cols:
+                        img = video[0, 0, a, :, :].cpu().detach().numpy()
+                    elif a < cols * 2:
+                        img = attn[0, 0, a%cols, :, :].cpu().detach().numpy()
+                    else:
+                        img = yh_attn[0, 0, a%cols, :, :].cpu().detach().numpy()
+
+                    fig.add_subplot(rows, cols, a+1)
+                    plt.xticks([])
+                    plt.yticks([])
+                    plt.imshow(img)
+                fig.canvas.draw()
+                frame_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+                frame_plot = frame_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+                wandb.log( {
+                    "video_frames": wandb.Image(frame_plot)
+                } )
         
         model.eval()
 
@@ -117,30 +143,30 @@ if __name__ == "__main__":
             utilities.save_model(f"checkpoints/v-ae-{wandb.run.name}", model)
         last_loss = avg_loss
 
-        if e % config.cb_freq == 0:
-            fig=plt.figure(figsize=(8, 5))
-            plt.tight_layout()
+        # if e % config.cb_freq == 0:
+        fig=plt.figure(figsize=(8, 5))
+        plt.tight_layout()
 
-            cols = config.num_frames
-            rows = 3
-            for a in range(cols * rows):
-                if a < cols:
-                    img = video_val[0, 0, a, :, :].cpu().detach().numpy()
-                elif a < cols * 2:
-                    img = attn_val[0, 0, a%cols, :, :].cpu().detach().numpy()
-                else:
-                    img = yh_attn_val[0, 0, a%cols, :, :].cpu().detach().numpy()
+        cols = config.num_frames
+        rows = 3
+        for a in range(cols * rows):
+            if a < cols:
+                img = video_val[0, 0, a, :, :].cpu().detach().numpy()
+            elif a < cols * 2:
+                img = attn_val[0, 0, a%cols, :, :].cpu().detach().numpy()
+            else:
+                img = yh_attn_val[0, 0, a%cols, :, :].cpu().detach().numpy()
 
-            fig.add_subplot(rows, cols, a+1)
-            plt.xticks([])
-            plt.yticks([])
-            plt.imshow(img)
-            fig.canvas.draw()
-            frame_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-            frame_plot = frame_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+        fig.add_subplot(rows, cols, a+1)
+        plt.xticks([])
+        plt.yticks([])
+        plt.imshow(img)
+        fig.canvas.draw()
+        frame_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+        frame_plot = frame_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
 
-            wandb.log( {
-                "video_frames": wandb.Image(frame_plot)
-            } )
+        wandb.log( {
+            "video_frames_val": wandb.Image(frame_plot)
+        } )
 
     utilities.save_model(f"saved_models/v-ae-{wandb.run.name}", model)
