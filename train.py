@@ -143,14 +143,14 @@ if __name__ == "__main__":
         cols = config.num_frames
         rows = 3
 
-        for i in range(cols * rows):
-          if i < cols:
-              img = video[0, 0, i, :, :].cpu().detach().numpy()
-          elif i < cols * 2:
-              img = attn[0, 0, i%cols, :, :].cpu().detach().numpy()
+        for a in range(cols * rows):
+          if a < cols:
+              img = video[0, 0, a, :, :].cpu().detach().numpy()
+          elif a < cols * 2:
+              img = attn[0, 0, a%cols, :, :].cpu().detach().numpy()
           else:
-              img = yh_attn[0, 0, i%cols, :, :].cpu().detach().numpy()
-          fig.add_subplot(rows, cols, i+1)
+              img = yh_attn[0, 0, a%cols, :, :].cpu().detach().numpy()
+          fig.add_subplot(rows, cols, a+1)
           plt.xticks([])
           plt.yticks([])
           plt.imshow(img)

@@ -41,12 +41,13 @@ if __name__ == "__main__":
     DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
     config.hop = int((config.samplerate/config.framerate)/config.hops_per_frame)
+    audio_sample_len = int(config.hops_per_frame * config.hop * config.num_frames)
 
     dataset = STFT_Dataset(
         samplerate = config.samplerate,
         fft_len = config.fft_len,
         hop = config.hop,
-        audio_sample_len = int(config.hops_per_frame * config.hop * config.num_frames),
+        audio_sample_len = audio_sample_len,
         noise_std = config.noise_scalar,
         normalize_input_fft = config.normalize_fft,
         normalize_output_fft = config.normalize_output_fft,
@@ -69,6 +70,11 @@ if __name__ == "__main__":
                                           num_workers=0)
 
     x_stft, y_stft, audio = next(iter(train_gen))
+
+    # print(f"ystft shape {y_stft.shape}")
+
+    # test = audio_sample_len // config.hop
+    # print(f'PREDICTED NUM FRAMES {test}')
 
     model = AV_Model_STFT(x_stft.shape, 
                         [config.batch_size, 1, config.num_frames, config.framesize, config.framesize],
@@ -104,6 +110,8 @@ if __name__ == "__main__":
             wandb.log({ "loss": loss } )
 
         print(f'epoch {e} step {i} loss {loss.sum()}')
+        
+        model.eval()
 
         # validation
         for i, d in enumerate(val_gen):
@@ -111,7 +119,6 @@ if __name__ == "__main__":
             y_stft_val = d[1]
             audio_val = d[2]
             y_stft_val = y_stft_val.to(DEVICE)
-            model.eval()
             with torch.no_grad():
                 yh_stft_val = model.audio_ae_forward(y_stft_val)
                 val_loss = mse_loss(yh_stft_val, y_stft_val)
@@ -160,4 +167,4 @@ if __name__ == "__main__":
                 "audio_output": wandb.Audio(p_audio, sample_rate=config.samplerate)
             } )
 
-    utilities.save_model(f"saved_models/autoencoder-{wandb.run.name}", model)
+    utilities.save_model(f"saved_models/a-ae-{wandb.run.name}", model)

@@ -358,7 +358,78 @@ class STFT_Dataset():
 
   def __getitem__(self, idx):
     return self.get_example(idx)
-        
+
+
+class Video_Dataset():
+
+    # num vid frames -> how many video frames to extract flow data from, size of 4D tensor
+    def __init__(self, 
+                 frames_per_clip=4, 
+                 frame_hop=2,
+                 framesize=256,
+                 autocontrast=False,
+                 shuffle_files=True,
+                 data_path="./data/raw",
+                 max_clip_len=None):
+
+        # set attention extractor parameters
+        self.attention_extractor = VideoAttention(
+          patch_size=8,
+          threshold=0.6
+        )
+        self.frames_per_clip = frames_per_clip
+        self.frame_hop = frame_hop
+        self.autocontrast = autocontrast
+
+        # filter out clips that are not 30 fps
+        if not os.path.isfile("clipcache/valid_clips.obj"):
+          all_vids = utilities.get_all_files(data_path, "mp4")
+          all_vids = utilities.filter_valid_videos(all_vids, 
+                                                fps_lower_lim=29.97002997002996, 
+                                                fps_upper_lim=30., 
+                                                max_frames=max_clip_len)
+
+          utilities.save_cache_obj("clipcache/valid_clips.obj", all_vids)
+        else:
+          all_vids = utilities.load_cache_obj("clipcache/valid_clips.obj")
+
+        print(f"number of videos found: {len(all_vids)}")
+
+        self.transform = pt_transforms.Compose([
+          pt_transforms.RandomResizedCrop(framesize, scale=(0.6,1.0)),
+          pt_transforms.Normalize(
+                    (0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+        ])
+
+        if shuffle_files:
+          random.shuffle(all_vids)
+
+        self.video_clips = utilities.extract_clips(all_vids,
+                                              frames_per_clip,
+                                              frame_hop,
+                                              None)
+
+    def __len__(self):
+        return self.video_clips.num_clips()
+
+    def __getitem__(self, idx):
+      video, _, _, _, _ = self.video_clips.get_clip(idx)
+      
+      video = video.permute(0, 3, 1, 2).type(torch.float32)
+      video = video / 255.
+      video = self.transform(video)
+      
+      if self.autocontrast:
+        video = pt_transforms.functional.autocontrast(video)
+
+      # get the video's attention map using DINO model
+      attn = self.attention_extractor._inference(video)
+
+      attn *= 1/torch.max(attn)
+
+      video = video.permute(1, 0, 2, 3)
+      attn = attn.permute(1,0,2,3)
+      return attn, video
 
 if __name__ == "__main__":
     dataset = AV_Dataset(
