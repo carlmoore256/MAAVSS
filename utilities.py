@@ -140,6 +140,39 @@ def save_model(path, model, overwrite=False):
   #     path = f'{path}_(1)'
   torch.save(model.state_dict(), path)
 
+def save_checkpoint(model_dict, opt_dict, epoch, loss, name, dir):
+    print(f'saving {name}.pt checkpoint - {loss} avg loss (val)')
+    torch.save({
+        'epoch': epoch,
+        'model_state_dict': model_dict,
+        'optimizer_state_dict': opt_dict,
+        'loss': loss
+    }, f"{dir}/{name}.pt")
+
+def load_checkpoint(model, optimizer, dir, auto=True, path=None):
+  if auto:
+    latest_cp = latest_file(dir, "pt")
+    if latest_cp is None:
+      print('checkpoint not found, aborting cp load')
+      return
+    print(f"loading model checkpoint from {latest_cp}")
+    checkpoint = torch.load(latest_cp)
+  elif path is not None:
+    print(f"loading model checkpoint from {path}")
+    checkpoint = torch.load(path)
+  model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+  try:
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+  except Exception as e:
+    print(f'Error loading optimizer: {e}')
+
+def latest_file(dir, ext):
+  all_files = glob.glob(f'{dir}/*.{ext}', recursive=True)
+  if len(all_files) > 0:
+    return max(all_files, key=os.path.getctime)
+  else:
+    return None
+
 def video_phasegram(frames, resize=None, diff=True, cumulative=True):
   frames = torch.squeeze(frames, 1)
   if resize is not None:
@@ -245,7 +278,6 @@ def latent_fusion_image_callback(latent):
   x_pos = 0
   y_pos = 0
   for i, patch in enumerate(latent):
-    print(f'x {x_pos} y {y_pos}')
     canvas[x_pos : x_pos + latent.shape[1], y_pos : y_pos + latent.shape[2]] = patch
     x_pos += latent.shape[1]
     x_pos %= canvas.shape[0]

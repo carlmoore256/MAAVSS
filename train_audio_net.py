@@ -36,6 +36,8 @@ if __name__ == "__main__":
 
     parser.add_argument('--data_path', type=str, default="E:/MUSICES", help="path to dataset")
     parser.add_argument('--saved_model', type=str, default=None, help="path to saved model state dict")
+    parser.add_argument('--checkpoint', type=str, default=None, help="load model checkpoint")
+    parser.add_argument('--checkpoint_dir', type=str, default="checkpoints/", help="specify checkpoint save directory")
 
     args = parser.parse_args()
     config = wandb.config
@@ -81,17 +83,28 @@ if __name__ == "__main__":
                         [config.batch_size, 1, config.num_frames, config.p_size*config.p_size],
                         config.hops_per_frame).to(DEVICE)
     
-    if config.saved_model != None:
-        print(f'Loading model weights from {config.saved_model}')
-        model.load_state_dict(torch.load(config.saved_model))
+
 
     mse_loss = torch.nn.MSELoss()
 
     optimizer = torch.optim.Adam(model.stft_autoencoder.parameters(), lr=config.learning_rate)
     
-    model.toggle_enc_grads(True)
+    if config.saved_model != None:
+        print(f'Loading model weights from {config.saved_model}')
+        model.load_state_dict(torch.load(config.saved_model))
+    if config.checkpoint != None:
+        print(f"loading model checkpoint from {config.checkpoint}")
+        checkpoint = torch.load(config.checkpoint)
+        model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+        try:
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        except Exception as e:
+            print(f"error loading optimizer dict {e}")
 
-    last_loss = 1e5
+    model.toggle_enc_grads(True)
+    model.toggle_fusion_grads(False)
+
+    best_loss = 1e5
 
     for e in range(config.epochs):
 
@@ -133,10 +146,14 @@ if __name__ == "__main__":
 
         avg_loss /= len(val_gen)
 
-        if avg_loss < last_loss:
-            print(f'saving {wandb.run.name} checkpoint - {avg_loss} avg loss (val)')
-            utilities.save_model(f"checkpoints/avf-a-ae-{wandb.run.name}", model)
-        last_loss = avg_loss
+        if avg_loss < best_loss:
+            best_loss = avg_loss
+            print(f'saving {wandb.run.name} checkpoint - {best_loss} best avg loss (val)')
+            utilities.save_checkpoint(model.state_dict(), 
+                            optimizer.state_dict(),
+                            e, avg_loss,
+                            wandb.run.name,
+                            config.checkpoint_dir)
         
         stft_plot = utilities.stft_ae_image_callback(y_stft_val[0], yh_stft_val[0])
         p_audio = dataset.istft(yh_stft_val[0].cpu().detach())

@@ -554,9 +554,9 @@ class AV_Fusion_Model(nn.Module):
                                     stride=tuple(stride), 
                                     padding=(2,2),
                                     output_padding=tuple(out_padding)))
-            # if encoded_shape != [temporal_dim, spatial_dim]:
-            modules.append(nn.BatchNorm2d(out_ch))
-            modules.append(nn.Tanh())
+            if encoded_shape != [temporal_dim, spatial_dim]:
+                modules.append(nn.BatchNorm2d(out_ch))
+                modules.append(nn.Tanh())
             in_ch = out_ch
 
         self.stft_decoder = nn.Sequential(*modules)
