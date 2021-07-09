@@ -9,6 +9,7 @@ import subprocess
 import os
 import numpy as np
 import torchvision.transforms.functional as TF
+from math import sqrt
 
 def get_all_files(base_dir, ext):
     return glob.glob(f'{base_dir}/*/**/**.{ext}', recursive=True)
@@ -204,7 +205,7 @@ def video_phasegram_image(y_phasegram, yh_phasegram, frames, dims=(512, 2048)):
     fig.canvas.draw()
     frame_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
     frame_plot = frame_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-
+    plt.close()
     return frame_plot
 
 def stft_ae_image_callback(y_stft, yh_stft):
@@ -234,4 +235,31 @@ def stft_ae_image_callback(y_stft, yh_stft):
   fig.canvas.draw()
   fft_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
   fft_plot = fft_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+  plt.close()
   return fft_plot
+
+# return a plot of an image representing latent fused dimension
+def latent_fusion_image_callback(latent):
+  canvas = np.zeros((int(sqrt(latent.shape[0])) * latent.shape[1], 
+                        int(sqrt(latent.shape[0])) * latent.shape[2]))
+  x_pos = 0
+  y_pos = 0
+  for i, patch in enumerate(latent):
+    print(f'x {x_pos} y {y_pos}')
+    canvas[x_pos : x_pos + latent.shape[1], y_pos : y_pos + latent.shape[2]] = patch
+    x_pos += latent.shape[1]
+    x_pos %= canvas.shape[0]
+    if x_pos == 0 and i > 0:
+      y_pos += latent.shape[2]
+
+  fig=plt.figure(figsize=(5, 5))
+  plt.tight_layout()
+  plt.title("latent AV fusion")
+  plt.axis("off")
+  plt.imshow(canvas)
+  fig.canvas.draw()
+  latent_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+  latent_plot = latent_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+  plt.close()
+  return latent_plot
+  

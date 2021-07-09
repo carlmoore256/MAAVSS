@@ -502,6 +502,9 @@ class AV_Fusion_Model(nn.Module):
         out_ch = fc_size // (output_shape[0] * output_shape[1])
         # our spatial dim must be low enough to accomadate fc size
 
+        # number of channels out of the second fc layer
+        fc2_out = latent_channels * (output_shape[0] * output_shape[1])
+
         self.fusion_net = nn.Sequential(
             nn.Conv2d(in_channels=latent_channels * 2, 
                       out_channels=out_ch, 
@@ -510,7 +513,9 @@ class AV_Fusion_Model(nn.Module):
             nn.BatchNorm2d(out_ch),
             nn.ReLU(),
             nn.Flatten(1, 3),
-            nn.Linear(fc_size, fc_size),
+            nn.Linear(fc_size, fc_size//2),
+            nn.ReLU(),
+            nn.Linear(fc_size//2, fc2_out),
             nn.ReLU()
         ).to("cuda")
 
@@ -521,6 +526,8 @@ class AV_Fusion_Model(nn.Module):
 
         with torch.no_grad():
             x_av_fused = self.fusion_net(x_av_cat)
+
+        # print(f'FUSED SHAPE {x_av_fused.shape}')
 
         ############### STFT DECODER #################
 
@@ -575,6 +582,18 @@ class AV_Fusion_Model(nn.Module):
         print(f'Input shape {pgram_shape}')
         summary(self.phasegram_autoencoder, 
                 input_size=(pgram_shape[1], pgram_shape[2], pgram_shape[3]))
+    
+    # enable these grads for training the fusion network
+    def toggle_fusion_grads(self, toggle):
+        for param in self.fusion_net:
+            param.requires_grad = toggle
+
+    # disable encoder grads for training the av fusion
+    def toggle_enc_grads(self, toggle):
+        for param in self.stft_encoder:
+            param.requires_grad = toggle
+        for param in self.phasegram_encoder:
+            param.requires_grad = toggle
 
     def visual_ae_forward(self, x_v):
         x_v = self.phasegram_autoencoder(x_v)
@@ -591,14 +610,20 @@ class AV_Fusion_Model(nn.Module):
         x_av_cat = torch.cat((x_v, x_a), dim=1)
 
         x_av_fused = self.fusion_net(x_av_cat)
+        # these both share the same dims
+        x_av_fused = torch.reshape(x_av_fused,
+            (x_av_fused.shape[0], self.latent_channels, x_a.shape[2], x_a.shape[3]))
+       
+        # x_a_latent = torch.reshape(x_av_fused,
+                                # (x_av_fused.shape[0], self.latent_channels, x_a.shape[2], x_a.shape[3]))
 
-        x_a_out = torch.reshape(x_av_fused, 
-                                (x_av_fused.shape[0], self.latent_channels, x_a.shape[2], x_a.shape[3]))
-
-        x_v_out = torch.reshape(x_av_fused, 
-                                (x_av_fused.shape[0], self.latent_channels, x_v.shape[2], x_v.shape[3]))
+        # x_v_latent = torch.reshape(x_av_fused, 
+        #                         (x_av_fused.shape[0], self.latent_channels, x_v.shape[2], x_v.shape[3]))
         
-        return x_a_out, x_v_out
+        x_a_out = self.stft_decoder(x_av_fused)
+        x_v_out = self.phasegram_decoder(x_av_fused)
+
+        return x_a_out, x_v_out, x_av_fused
 
 
 

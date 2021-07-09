@@ -26,13 +26,12 @@ class AV_Dataset():
                  center_fft=True, 
                  use_polar=False, 
                  normalize_input_fft=True,
+                 normalize_output_fft=True,
                  autocontrast=False,
                  shuffle_files=True,
-                 num_workers=1, 
+                 num_workers=0, 
                  data_path="./data/raw",
-                 max_clip_len=None,
-                 pg_diff=True,
-                 pg_cumulative=True):
+                 max_clip_len=None):
 
         # set attention extractor parameters
         self.attention_extractor = VideoAttention(
@@ -45,15 +44,13 @@ class AV_Dataset():
         self.fft_len=fft_len
         self.noise_std = noise_std
         self.normalize_input_fft = normalize_input_fft
+        self.normalize_output_fft = normalize_output_fft
         # self.fft_len = int((frames_per_clip/framerate) * samplerate)
         self.hop = hop
         self.hops_per_frame = hops_per_frame
         self.center_fft = center_fft
         self.use_polar = use_polar
         self.autocontrast = autocontrast
-        self.pg_diff = pg_diff
-        self.pg_cumulative = pg_cumulative
-
         self.backend = torchaudio.get_audio_backend()
 
         # filter out clips that are not 30 fps
@@ -210,7 +207,8 @@ class AV_Dataset():
       audio = self.audio_transforms(audio, sr)
 
       y_stft = self.stft(audio)
-      # y_stft *= 1/torch.max(torch.abs(y_stft))
+      if self.normalize_output_fft:
+        y_stft *= 1/torch.max(torch.abs(y_stft))
       # permute dims [n_fft, timesteps, channels] -> [channels, timesteps, n_fft]
       # timesteps now will line up with 3D tensor when its WxH are flattened
       y_stft = y_stft.permute(2, 1, 0)
@@ -436,7 +434,7 @@ class Video_Dataset():
 
       video = video.permute(1, 0, 2, 3)
       attn = attn.permute(1,0,2,3)
-      
+
       return attn, video
 
 if __name__ == "__main__":

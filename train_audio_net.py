@@ -88,6 +88,8 @@ if __name__ == "__main__":
     mse_loss = torch.nn.MSELoss()
 
     optimizer = torch.optim.Adam(model.stft_autoencoder.parameters(), lr=config.learning_rate)
+    
+    model.toggle_enc_grads(True)
 
     last_loss = 1e5
 
