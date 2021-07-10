@@ -125,7 +125,11 @@ if __name__ == "__main__":
         if avg_loss < last_loss:
             if not args.no_save:
                 print(f'saving {wandb.run.name} checkpoint - {avg_loss} avg loss (val)')
-                utilities.save_model(f"checkpoints/avf-v-ae-{wandb.run.name}", model)
+                utilities.save_checkpoint(model.state_dict(), 
+                                        optimizer.state_dict(),
+                                        e, avg_loss,
+                                        wandb.run.name,
+                                        config.cp_dir)
         last_loss = avg_loss
         
         frame_plot = utilities.video_phasegram_image(
