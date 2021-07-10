@@ -34,6 +34,7 @@ def model_args():
     parser.add_argument('--checkpoint', type=str, default=None, help="load model checkpoint")
 
     parser.add_argument('--cp_dir', type=str, default="checkpoints/", help="specify checkpoint save directory")
+    parser.add_argument('--cp_load_opt', action="store_true", help="load checkpoint optimizer config")
     parser.add_argument('-c', action="store_true", help="auto-loads the last saved checkpoint")
     parser.add_argument('--no_save', action="store_true", help="disable saving")
     args = parser.parse_args()

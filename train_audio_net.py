@@ -67,7 +67,7 @@ if __name__ == "__main__":
         print(f'Loading model weights from {config.saved_model}')
         model.load_state_dict(torch.load(config.saved_model), strict=False)
     if args.c or args.checkpoint is not None:
-        utilities.load_checkpoint(model, optimizer, args.cp_dir, args.c, args.checkpoint)
+        utilities.load_checkpoint(model, optimizer, args.cp_dir, args.c, args.checkpoint, config.cp_load_opt)
 
     model.toggle_enc_grads(True)
     model.toggle_fusion_grads(False)

@@ -65,17 +65,31 @@ if __name__ == "__main__":
     mse_loss = torch.nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
 
-    # disable the encoder head grads for the network
+    # disable the encoder/decoder head grads for the network
     # model.toggle_enc_grads(False)
-    model.toggle_fusion_grads(True)
+    # model.toggle_dec_grads(False)
+    # model.toggle_fusion_grads(True)
+
+
+    # for name, param in model.named_parameters():
+    #     print(f"\nname")
+    #     if param.requires_grad:
+    #         print(param.shape)
 
     if config.saved_model != None:
         print(f'Loading model weights from {config.saved_model}')
         model.load_state_dict(torch.load(config.saved_model), strict=False)
 
+    print(f'LOAD OPT {args.cp_load_opt}')
     if args.c or args.checkpoint is not None:
-        utilities.load_checkpoint(model, optimizer, args.cp_dir, args.c, args.checkpoint)
+        utilities.load_checkpoint(model, optimizer, args.cp_dir, args.c, args.checkpoint, config.cp_load_opt)
 
+    for param in model.stft_autoencoder.parameters():
+        param.requires_grad = False
+    for param in model.phasegram_autoencoder.parameters():
+        param.requires_grad = False
+
+        
     t_gen = iter(train_gen)
     v_gen = iter(val_gen)
     last_loss = 1e5
@@ -113,10 +127,12 @@ if __name__ == "__main__":
                         "phasegram_loss":v_loss } )
 
             if i % config.cb_freq == 0:
-                print(f'epoch {e} step {i}/{config.steps_per_epoch} loss {loss.sum()}')
+                print(f'epoch {e} step {i}/{config.steps_per_epoch} loss {loss.sum()} a_loss {a_loss} v_loss {v_loss}')
+                stft_plot = utilities.stft_ae_image_callback(y_stft[0], yh_stft[0])
                 frame_plot = utilities.video_phasegram_image(
                     y_phasegram[0], yh_phasegram[0], attn[0], preview_dims)
-                wandb.log( {"frames": wandb.Image(frame_plot)} )
+                wandb.log( {"frames": wandb.Image(frame_plot),
+                            "stft": wandb.Image(stft_plot)} )
         
         model.eval()
         avg_loss = 0

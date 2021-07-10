@@ -150,7 +150,7 @@ def save_checkpoint(model_dict, opt_dict, epoch, loss, name, dir):
         'loss': loss
     }, f"{dir}/{name}.pt")
 
-def load_checkpoint(model, optimizer, dir, auto=True, path=None):
+def load_checkpoint(model, optimizer, dir, auto=True, path=None, load_opt=False):
   if auto:
     latest_cp = latest_file(dir, "pt")
     if latest_cp is None:
@@ -162,10 +162,12 @@ def load_checkpoint(model, optimizer, dir, auto=True, path=None):
     print(f"loading model checkpoint from {path}")
     checkpoint = torch.load(path)
   model.load_state_dict(checkpoint['model_state_dict'], strict=False)
-  try:
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-  except Exception as e:
-    print(f'Error loading optimizer: {e}')
+  if load_opt:
+    print("trying to load opt")
+    try:
+      optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    except Exception as e:
+      print(f'Error loading optimizer: {e}')
 
 def latest_file(dir, ext):
   all_files = glob.glob(f'{dir}/*.{ext}', recursive=True)

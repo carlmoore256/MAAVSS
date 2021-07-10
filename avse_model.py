@@ -600,6 +600,12 @@ class AV_Fusion_Model(nn.Module):
         for param in self.phasegram_encoder:
             param.requires_grad = toggle
 
+    def toggle_dec_grads(self, toggle):
+        for param in self.stft_decoder:
+            param.requires_grad = False
+        for param in self.phasegram_decoder:
+            param.requires_grad = False
+
     def visual_ae_forward(self, x_v):
         x_v = self.phasegram_autoencoder(x_v)
         return x_v
