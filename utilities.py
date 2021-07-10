@@ -8,6 +8,7 @@ import pickle
 import subprocess
 import os
 import numpy as np
+from torch.functional import norm
 import torchvision.transforms.functional as TF
 from math import sqrt
 
@@ -173,7 +174,7 @@ def latest_file(dir, ext):
   else:
     return None
 
-def video_phasegram(frames, resize=None, diff=True, cumulative=True):
+def video_phasegram(frames, resize=None, diff=True, cumulative=True, normalize=True):
   frames = torch.squeeze(frames, 1)
   if resize is not None:
     frames = TF.resize(frames, resize)
@@ -193,6 +194,8 @@ def video_phasegram(frames, resize=None, diff=True, cumulative=True):
   else:
     phasegram = p_flat
   phasegram = torch.unsqueeze(phasegram, 1)
+  if normalize:
+    phasegram *= 1/torch.max(torch.abs(phasegram))
   return phasegram
 
 def generate_filmstrip(frames, dims):
