@@ -3,7 +3,6 @@ import torch
 from torch.utils import data
 from av_dataset import AV_Dataset
 from avse_model import AV_Fusion_Model
-import argparse
 import matplotlib.pyplot as plt
 import numpy as np
 import wandb
@@ -147,12 +146,12 @@ if __name__ == "__main__":
         avg_loss /= config.val_steps
 
         if avg_loss < last_loss and e > 0:
-            utilities.save_checkpoint(model.state_dict(), 
-                                      optimizer.state_dict(),
-                                      e, avg_loss,
-                                      wandb.run.name,
-                                      config.cp_dir)
-
+            if not args.no_save:
+                utilities.save_checkpoint(model.state_dict(), 
+                                        optimizer.state_dict(),
+                                        e, avg_loss,
+                                        wandb.run.name,
+                                        config.cp_dir)
         last_loss = avg_loss
         
         frame_plot = utilities.video_phasegram_image(
@@ -168,5 +167,5 @@ if __name__ == "__main__":
             "audio_target": wandb.Audio(audio_v[0], sample_rate=config.samplerate),
             "audio_output": wandb.Audio(p_audio, sample_rate=config.samplerate)
         } )
-
-    utilities.save_model(f"saved_models/avf-v-ae-{wandb.run.name}.pt", model, overwrite=True)
+    if not args.no_save:
+        utilities.save_model(f"saved_models/avf-v-ae-{wandb.run.name}.pt", model, overwrite=True)

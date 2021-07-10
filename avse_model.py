@@ -424,37 +424,37 @@ class AV_Fusion_Model(nn.Module):
 
         ############### PHASEGRAM ENCODER #################
 
-        self.phasegram_encoder = nn.Sequential(
-            nn.Conv2d(1, 8, kernel_size=(3, 9), stride=(1,4), padding=(1, 4)),
-            nn.BatchNorm2d(8),
-            nn.Tanh(),
-            nn.Conv2d(8, 32, kernel_size=(3, 9), stride=(1,4), padding=(1, 4)),
-            nn.BatchNorm2d(32),
-            nn.Tanh(),
-            nn.Conv2d(32, 64, kernel_size=(3, 9), stride=(1,4), padding=(1, 4)),
-            nn.BatchNorm2d(64),
-            nn.Tanh(),
-            nn.Conv2d(64, latent_channels, kernel_size=(3, 9), stride=(1,4), padding=(1, 4)),
-            nn.BatchNorm2d(latent_channels),
-            nn.Tanh()
-        ).to("cuda")        
-        
-        ############### PHASEGRAM DECODER #################
+        modules = []
+        tensor = torch.rand(pgram_shape)
+        in_ch = 1
 
-        self.phasegram_decoder = nn.Sequential(
-            nn.ConvTranspose2d(latent_channels, 32, kernel_size=(3, 5), stride=(1,4), padding=(1, 1), output_padding=(0,1)),
-            nn.BatchNorm2d(32),
-            nn.Tanh(),
-            nn.ConvTranspose2d(32, 16, kernel_size=(3, 5), stride=(1,4), padding=(1, 1), output_padding=(0,1)),
-            nn.BatchNorm2d(16),
-            nn.Tanh(),
-            nn.ConvTranspose2d(16, 8, kernel_size=(3, 5), stride=(1,4), padding=(1, 1), output_padding=(0,1)),
-            nn.BatchNorm2d(8),
-            nn.Tanh(),
-            nn.ConvTranspose2d(8, 1, kernel_size=(3, 5), stride=(1,4), padding=(1, 1), output_padding=(0,1)),
-            # nn.BatchNorm2d(1),
-            # nn.Tanh()
-        ).to("cuda")
+        while tensor.shape[-1] > tensor.shape[-2]:
+            out_ch = in_ch * 2
+            out_ch = min(out_ch, latent_channels)
+            conv_layer = nn.Conv2d(in_ch, out_ch, kernel_size=(3, 3), stride=(1,2), padding=(1, 1))
+            tensor = conv_layer(tensor)
+            modules.append(conv_layer)
+            modules.append(nn.BatchNorm2d(out_ch))
+            modules.append(nn.LeakyReLU(negative_slope=0.3))
+            in_ch = out_ch
+
+        self.phasegram_encoder = nn.Sequential(*modules).to("cuda")
+
+        ############### PHASEGRAM DECODER #################
+        modules = []
+        in_ch = latent_channels
+
+        while tensor.shape[-1] < pgram_shape[-1]:
+            out_ch = in_ch // 2
+            out_ch = max(out_ch, 1)
+            conv_layer = nn.ConvTranspose2d(in_ch, out_ch, kernel_size=(3, 3), stride=(1,2), padding=(1,1), output_padding=(0,1))
+            tensor = conv_layer(tensor)
+            modules.append(conv_layer)
+            modules.append(nn.BatchNorm2d(out_ch))
+            modules.append(nn.LeakyReLU(negative_slope=0.3))
+            in_ch = out_ch
+
+        self.phasegram_decoder = nn.Sequential(*modules).to("cuda")
 
         x_v = torch.rand(pgram_shape).to("cuda")
 
@@ -627,7 +627,13 @@ class AV_Fusion_Model(nn.Module):
 
 
 
-
+def conv_output_shape(h_w, kernel_size=1, stride=1, pad=0, dilation=1):
+    from math import floor
+    if type(kernel_size) is not tuple:
+        kernel_size = (kernel_size, kernel_size)
+    h = floor( ((h_w[0] + (2 * pad) - ( dilation * (kernel_size[0] - 1) ) - 1 )/ stride[0]) + 1)
+    w = floor( ((h_w[1] + (2 * pad) - ( dilation * (kernel_size[1] - 1) ) - 1 )/ stride[1]) + 1)
+    return h, w
 # architecture - Hou et. al
 # Audio-Visual Speech Enhancement Using Multimodal Deep Convolutional Neural Networks
 # https://arxiv.org/pdf/1703.10893.pdf
