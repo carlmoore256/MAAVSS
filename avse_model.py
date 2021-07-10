@@ -431,11 +431,13 @@ class AV_Fusion_Model(nn.Module):
         while tensor.shape[-1] > tensor.shape[-2]:
             out_ch = in_ch * 2
             out_ch = min(out_ch, latent_channels)
-            conv_layer = nn.Conv2d(in_ch, out_ch, kernel_size=(3, 3), stride=(1,2), padding=(1, 1))
-            tensor = conv_layer(tensor)
+            conv_layer = nn.Conv2d(in_ch, out_ch, kernel_size=(1, 9), stride=(1,2), padding=(0, 4))
+            with torch.no_grad():
+                tensor = conv_layer(tensor)
             modules.append(conv_layer)
             modules.append(nn.BatchNorm2d(out_ch))
-            modules.append(nn.LeakyReLU(negative_slope=0.3))
+            modules.append(nn.Tanh())
+            # modules.append(nn.LeakyReLU(negative_slope=0.3))
             in_ch = out_ch
 
         self.phasegram_encoder = nn.Sequential(*modules).to("cuda")
@@ -447,13 +449,15 @@ class AV_Fusion_Model(nn.Module):
         while tensor.shape[-1] < pgram_shape[-1]:
             out_ch = in_ch // 2
             out_ch = max(out_ch, 1)
-            conv_layer = nn.ConvTranspose2d(in_ch, out_ch, kernel_size=(3, 3), stride=(1,2), padding=(1,1), output_padding=(0,1))
-            tensor = conv_layer(tensor)
+            conv_layer = nn.ConvTranspose2d(in_ch, out_ch, kernel_size=(1, 9), stride=(1,2), padding=(0,4), output_padding=(0,1))
             modules.append(conv_layer)
-            modules.append(nn.BatchNorm2d(out_ch))
-            modules.append(nn.LeakyReLU(negative_slope=0.3))
+            with torch.no_grad():
+                tensor = conv_layer(tensor)
+            if tensor.shape[-1] != pgram_shape[-1]:
+                modules.append(nn.BatchNorm2d(out_ch))
+                modules.append(nn.Tanh())
             in_ch = out_ch
-
+        # modules.append(nn.Tanh())
         self.phasegram_decoder = nn.Sequential(*modules).to("cuda")
 
         x_v = torch.rand(pgram_shape).to("cuda")
@@ -461,6 +465,7 @@ class AV_Fusion_Model(nn.Module):
         with torch.no_grad():
             x_v = self.phasegram_encoder(x_v)
 
+        print(f'XV SHAPE {x_v.shape}')
         ############### STFT ENCODER #################
 
         modules = []
