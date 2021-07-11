@@ -605,6 +605,10 @@ class AV_Fusion_Model(nn.Module):
         summary(self.phasegram_autoencoder, 
                 input_size=(pgram_shape[1], pgram_shape[2], pgram_shape[3]))
 
+
+        self.a_fc1 = nn.Linear(fc2_out, stft_shape[-2] * stft_shape[-1])
+        self.v_fc1 = nn.Linear(fc2_out, pgram_shape[-2] * pgram_shape[-1])
+
     # enable these grads for training the fusion network
     def toggle_fusion_grads(self, toggle):
         self.lstm.requires_grad = toggle
@@ -665,8 +669,16 @@ class AV_Fusion_Model(nn.Module):
         # x_v_latent = torch.reshape(x_av_fused, 
         #                         (x_av_fused.shape[0], self.latent_channels, x_v.shape[2], x_v.shape[3]))
         
-        x_a_out = self.stft_decoder(x_av_fused)
-        x_v_out = self.phasegram_decoder(x_av_fused)
+        # x_a_out = self.stft_decoder(x_av_fused)
+        # x_v_out = self.phasegram_decoder(x_av_fused)
+        x_a_out = self.a_fc1(x_av_fused)
+        x_a_out = F.leaky_relu(x_a_out, negative_slope=0.3)
+
+        x_v_out = self.a_fc1(x_av_fused)
+        x_v_out = F.leaky_relu(x_v_out, negative_slope=0.3)
+
+        x_v_out = x_v_out.view(-1, self.pgram_shape[1], self.pgram_shape[2])
+        x_a_out = x_a_out.view(-1, self.stft_shape[1], self.stft_shape[2])
 
         return x_a_out, x_v_out, x_av_fused
 
