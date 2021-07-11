@@ -428,7 +428,9 @@ class AV_Fusion_Model(nn.Module):
         tensor = torch.rand(pgram_shape)
         in_ch = 1
 
-        while tensor.shape[-1] > tensor.shape[-2]:
+        # while tensor.shape[-1] > tensor.shape[-2]:
+        while tensor.shape[-1] * tensor.shape[-2] * latent_channels > fc_size // 2:
+
             out_ch = in_ch * 2
             out_ch = min(out_ch, latent_channels)
             conv_layer = nn.Conv2d(in_ch, out_ch, kernel_size=(1, 9), stride=(1,2), padding=(0, 4))
@@ -446,7 +448,8 @@ class AV_Fusion_Model(nn.Module):
         modules = []
         in_ch = latent_channels
 
-        while tensor.shape[-1] < pgram_shape[-1]:
+        # while tensor.shape[-1] < pgram_shape[-1]:
+        while tensor.shape[-1] * tensor.shape[-2] * latent_channels > fc_size // 2:
             out_ch = in_ch // 2
             out_ch = max(out_ch, 1)
             conv_layer = nn.ConvTranspose2d(in_ch, out_ch, kernel_size=(1, 9), stride=(1,2), padding=(0,4), output_padding=(0,1))
@@ -510,29 +513,44 @@ class AV_Fusion_Model(nn.Module):
         # number of channels out of the second fc layer
         fc2_out = latent_channels * (output_shape[0] * output_shape[1])
 
-        self.fusion_net = nn.Sequential(
-            nn.Conv2d(in_channels=latent_channels * 2, 
-                      out_channels=out_ch, 
-                      kernel_size=(3,3), 
-                      padding=(1,1)),
-            nn.BatchNorm2d(out_ch),
-            nn.ReLU(),
-            nn.Flatten(1, 3),
-            nn.Linear(fc_size, fc_size//2),
-            nn.ReLU(),
-            nn.Linear(fc_size//2, fc2_out),
-            nn.ReLU()
-        ).to("cuda")
+        # self.fusion_net = nn.Sequential(
+        #     nn.Conv2d(in_channels=latent_channels * 2, 
+        #               out_channels=out_ch, 
+        #               kernel_size=(3,3), 
+        #               padding=(1,1)),
+        #     nn.BatchNorm2d(out_ch),
+        #     nn.ReLU(),
+        #     nn.Flatten(1, 3),
+        #     nn.Linear(fc_size, fc_size//2),
+        #     nn.ReLU(),
+        #     nn.Linear(fc_size//2, fc2_out),
+        #     nn.ReLU()
+        # ).to("cuda")
+        # summary(self.fusion_net.to("cuda"), 
+        #         input_size=(latent_channels*2, output_shape[0], output_shape[1]))
+        
+        # x_av_cat = torch.cat((x_v, x_a), dim=1)
 
-        summary(self.fusion_net.to("cuda"), 
-                input_size=(latent_channels*2, output_shape[0], output_shape[1]))
-
-        x_av_cat = torch.cat((x_v, x_a), dim=1)
+        x_av_cat = torch.cat((x_v, x_a), dim=2)
+        print(f'X AV CAT SH {x_av_cat.shape}')
+        x_av_cat_sh = torch.flatten(x_av_cat, start_dim=-2, end_dim=-1)
+        print(f'X AV CAT SH {x_av_cat.shape}')
+        self.lstm = nn.LSTM(input_size=x_av_cat_sh.shape[-1], hidden_size=256, num_layers=1, bias=False, batch_first=True, dropout=0, bidirectional=True).to("cuda")
+        av = self.lstm(x_av_cat_sh)[0]
+        print(f'AV LSTM SH {av.shape}')
+        av = torch.flatten(av, start_dim=1)
+        print(f'AV FLATTENED SH {av.shape}')
+        self.fc1 = nn.Linear(fc_size, fc_size//2).to("cuda")
+        av = self.fc1(av)
+        print(f'AV Lin1 SH {av.shape}')
+        self.fc2 = nn.Linear(fc_size//2, fc2_out).to("cuda")
+        av = self.fc2(av)
+        print(f'AV Lin2 SH {av.shape}')
 
         with torch.no_grad():
             x_av_fused = self.fusion_net(x_av_cat)
 
-        # print(f'FUSED SHAPE {x_av_fused.shape}')
+        print(f'FUSED SHAPE {x_av_fused.shape}')
 
         ############### STFT DECODER #################
 
@@ -587,11 +605,14 @@ class AV_Fusion_Model(nn.Module):
         print(f'Input shape {pgram_shape}')
         summary(self.phasegram_autoencoder, 
                 input_size=(pgram_shape[1], pgram_shape[2], pgram_shape[3]))
-    
+
     # enable these grads for training the fusion network
     def toggle_fusion_grads(self, toggle):
-        for param in self.fusion_net:
-            param.requires_grad = toggle
+        self.lstm.requires_grad = toggle
+        self.fc1.requires_grad = toggle
+        self.fc2.requires_grad = toggle
+        # for param in self.fusion_net:
+        #     param.requires_grad = toggle
 
     # disable encoder grads for training the av fusion
     def toggle_enc_grads(self, toggle):
@@ -605,6 +626,16 @@ class AV_Fusion_Model(nn.Module):
             param.requires_grad = False
         for param in self.phasegram_decoder:
             param.requires_grad = False
+
+    def av_fusion_forward(self, x_av_cat):
+            x_av_cat = torch.flatten(x_av_cat, start_dim=-2, end_dim=-1)
+            av = self.lstm(x_av_cat)[0]
+            av = torch.flatten(av, start_dim=1)
+            av = self.fc1(av)
+            av = F.leaky_relu(av, negative_slope=0.3)
+            av = self.fc2(av)
+            av = F.leaky_relu(av, negative_slope=0.3)
+            return av
 
     def visual_ae_forward(self, x_v):
         x_v = self.phasegram_autoencoder(x_v)
