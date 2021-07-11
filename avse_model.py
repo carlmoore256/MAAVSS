@@ -549,7 +549,7 @@ class AV_Fusion_Model(nn.Module):
         print(f'AV Lin2 SH {av.shape}')
 
         with torch.no_grad():
-            x_av_fused = self.fusion_net(x_a, x_v)
+            x_av_fused = self.av_fusion_forward(x_a, x_v)
 
         print(f'FUSED SHAPE {x_av_fused.shape}')
 
@@ -656,7 +656,7 @@ class AV_Fusion_Model(nn.Module):
 
         # x_av_cat = torch.cat((x_v, x_a), dim=1)
 
-        x_av_fused = self.fusion_net(x_a, x_v)
+        x_av_fused = self.av_fusion_forward(x_a, x_v)
         # these both share the same dims
         x_av_fused = torch.reshape(x_av_fused,
             (x_av_fused.shape[0], self.latent_channels, x_a.shape[2], x_a.shape[3]))
