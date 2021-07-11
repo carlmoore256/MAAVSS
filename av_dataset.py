@@ -129,6 +129,8 @@ class AV_Dataset():
       return audio
 
     def audio_transforms(self, audio, sr, normalize=True, compress=False):
+      if audio.shape[0] > 1:
+        audio = torch.sum(audio, dim=0)
       if normalize:
         audio *= torch.max(torch.abs(audio))
       if sr != self.samplerate:
@@ -160,7 +162,7 @@ class AV_Dataset():
         # else:
         audio, sr = torchaudio.load(audio_path)
         audio = audio[:, samples_start:samples_start+self.audio_sample_len]
-        audio = torch.sum(audio, dim=0)
+        # audio = torch.sum(audio, dim=0)
       return video, audio, info["video_fps"], sr
 
     def save_example(self, attn, audio, video, fps, sr, idx):
@@ -288,6 +290,7 @@ class STFT_Dataset():
     self.all_vids = all_vids
 
   def audio_transforms(self, audio, sr, normalize=True, compress=False):
+    audio = torch.sum(audio, dim=0)
     if normalize:
       audio *= torch.max(torch.abs(audio))
     if sr != self.samplerate:
@@ -347,7 +350,7 @@ class STFT_Dataset():
     sr = info.sample_rate
     samples_start = np.random.randint(0,high=info.num_frames-self.audio_sample_len-1)
     audio, sr = torchaudio.load(audio_path, samples_start, num_frames=self.audio_sample_len)
-    audio = torch.sum(audio, dim=0)
+    audio = self.audio_transforms(audio, sr)
     y_stft = self.stft(audio)
     y_stft = y_stft.permute(2, 1, 0)
     if self.normalize_output_fft:

@@ -439,6 +439,7 @@ class AV_Fusion_Model(nn.Module):
             modules.append(conv_layer)
             modules.append(nn.BatchNorm2d(out_ch))
             modules.append(nn.Tanh())
+
             # modules.append(nn.LeakyReLU(negative_slope=0.3))
             in_ch = out_ch
 
@@ -499,7 +500,7 @@ class AV_Fusion_Model(nn.Module):
             in_ch = out_ch
 
         self.stft_encoder = nn.Sequential(*modules).to("cuda")
-
+        
         x_a = torch.rand(stft_shape).to("cuda")
         with torch.no_grad():
             x_a = self.stft_encoder(x_a)
@@ -533,14 +534,19 @@ class AV_Fusion_Model(nn.Module):
         # x_av_cat = torch.cat((x_v, x_a), dim=1)
         # re-arrange dimensions so that time dim is properly arranged for lstm
         x_av_cat = torch.cat((x_v.permute(0, 2, 1, 3), x_a.permute(0, 2, 1, 3)), dim=2)
-        print(f'X AV CAT SH {x_av_cat.shape}')
+        print(f'x_v {x_v.shape} x_a {x_a.shape}')
         x_av_cat = torch.flatten(x_av_cat, start_dim=-2, end_dim=-1)
-        print(f'X AV CAT SH {x_av_cat.shape}')
-        self.lstm = nn.LSTM(input_size=x_av_cat.shape[-1], hidden_size=256, num_layers=1, bias=False, batch_first=True, dropout=0, bidirectional=True).to("cuda")
+        print(f'x_av_cat sh {x_av_cat.shape}')
+
+        # conisder making bidirectional
+        self.lstm = nn.LSTM(input_size=x_av_cat.shape[-1], hidden_size=256, num_layers=1, 
+                            bias=False, batch_first=True, dropout=0, bidirectional=False).to("cuda")
+
+        # self.lstm.flatten_parameters()
         av = self.lstm(x_av_cat)[0]
         print(f'AV LSTM SH {av.shape}')
         av = torch.flatten(av, start_dim=1)
-        print(f'AV FLATTENED SH {av.shape}')
+        print(f'AV FLATTENED SH {av.shape} fc size {fc_size}')
         self.fc1 = nn.Linear(fc_size, fc_size//2).to("cuda")
         av = self.fc1(av)
         print(f'AV Lin1 SH {av.shape}')
@@ -622,24 +628,32 @@ class AV_Fusion_Model(nn.Module):
 
     # enable these grads for training the fusion network
     def toggle_fusion_grads(self, toggle):
-        self.lstm.requires_grad = toggle
-        self.fc1.requires_grad = toggle
-        self.fc2.requires_grad = toggle
-        # for param in self.fusion_net:
-        #     param.requires_grad = toggle
+        self.lstm.requires_grad_(toggle)
+        self.fc1.requires_grad_(toggle)
+        self.fc2.requires_grad_(toggle)
+        self.a_fc1.requires_grad_(toggle)
+        self.v_fc1.requires_grad_(toggle)
+
+    def toggle_stft_ae_grads(self, toggle):
+        for param in self.stft_autoencoder:
+            param.requires_grad_(toggle)
+
+    def toggle_phasegram_ae_grads(self, toggle):
+        for param in self.phasegram_autoencoder:
+            param.requires_grad_(toggle)
 
     # disable encoder grads for training the av fusion
     def toggle_enc_grads(self, toggle):
         for param in self.stft_encoder:
-            param.requires_grad = toggle
+            param.requires_grad_(toggle)
         for param in self.phasegram_encoder:
-            param.requires_grad = toggle
+            param.requires_grad_(toggle)
 
     def toggle_dec_grads(self, toggle):
         for param in self.stft_decoder:
-            param.requires_grad = False
+            param.requires_grad_(toggle)
         for param in self.phasegram_decoder:
-            param.requires_grad = False
+            param.requires_grad_(toggle)
 
     def av_fusion_forward(self, x_a, x_v):
             # re-arrange dimensions so that time dim is properly arranged for lstm
@@ -708,3 +722,30 @@ def conv_output_shape(h_w, kernel_size=1, stride=1, pad=0, dilation=1):
 # Audio-Visual Speech Enhancement Using Multimodal Deep Convolutional Neural Networks
 # https://arxiv.org/pdf/1703.10893.pdf
 
+
+
+
+    # def toggle_stft_enc_grads(self, toggle):
+    #     for param in self.stft_encoder:
+    #         param.requires_grad_(toggle)
+
+    # def toggle_stft_dec_grads(self, toggle):
+    #     for param in self.stft_decoder:
+    #         param.requires_grad_(toggle)
+
+    # def toggle_phasegram_enc_grads(self, toggle):
+    #     for param in self.phasegram_encoder:
+    #         param.requires_grad_(toggle)
+
+    # def toggle_phasegram_dec_grads(self, toggle):
+    #     for param in self.phasegram_decoder:
+    #         param.requires_grad_(toggle)
+
+    # # disable encoder grads for training the av fusion
+    # def toggle_enc_grads(self, toggle):
+    #     self.toggle_stft_enc_grads(toggle)
+    #     self.toggle_phasegram_enc_grads(toggle)
+
+    # def toggle_dec_grads(self, toggle):
+    #     self.toggle_stft_dec_grads(toggle)
+    #     self.toggle_phasegram_dec_grads(toggle)

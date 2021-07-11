@@ -18,9 +18,12 @@ if __name__ == "__main__":
 
     DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-    config.hop = int((config.samplerate/config.framerate)/config.hops_per_frame)
-    audio_sample_len = int(config.hops_per_frame * config.hop * config.num_frames)
-    num_fft_frames = audio_sample_len // config.hop
+    config.hop, audio_sample_len, config.num_fft_frames = utilities.calc_hop_size(
+        config.num_frames,
+        config.hops_per_frame, 
+        config.framerate, 
+        config.samplerate
+    )
 
     preview_dims=(512, 4096)
     
@@ -57,12 +60,17 @@ if __name__ == "__main__":
 
     x_stft, y_stft, attn, audio, video = next(iter(train_gen))
 
-    model = AV_Fusion_Model([config.batch_size, 2, num_fft_frames, config.fft_len//2], 
+    model = AV_Fusion_Model([config.batch_size, 2, config.num_fft_frames, config.fft_len//2], 
                         [config.batch_size, 1, config.num_frames, config.p_size*config.p_size],
                         config.hops_per_frame,
                         ).to(DEVICE)
 
     mse_loss = torch.nn.MSELoss()
+        
+    model.toggle_phasegram_ae_grads(False)
+    model.toggle_stft_ae_grads(False)
+    model.toggle_fusion_grads(True)
+
     optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
 
     # disable the encoder/decoder head grads for the network

@@ -20,6 +20,12 @@ def save_json(out_path, data, indent=3):
     json.dump(data, outfile, sort_keys=False, indent=indent)
   print(f'wrote json to {out_path}')
 
+def calc_hop_size(num_frames, hops_per_frame, fps, sr):
+  hop = int((sr/fps)/hops_per_frame)
+  audio_sample_len = int(hops_per_frame * hop * num_frames)
+  num_fft_frames = audio_sample_len // hop
+  return hop, audio_sample_len, num_fft_frames
+
 def load_json(path):
   with open(path) as json_file:
       jfile = json.load(json_file)
@@ -299,4 +305,7 @@ def latent_fusion_image_callback(latent):
   latent_plot = latent_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
   plt.close()
   return latent_plot
-  
+
+def disp_model_param_info(model):
+  for name, param in model.named_parameters():
+    print(f'{name} {param.requires_grad}')
