@@ -448,8 +448,7 @@ class AV_Fusion_Model(nn.Module):
         modules = []
         in_ch = latent_channels
 
-        # while tensor.shape[-1] < pgram_shape[-1]:
-        while tensor.shape[-1] * tensor.shape[-2] * latent_channels > fc_size // 2:
+        while tensor.shape[-1] < pgram_shape[-1]:
             out_ch = in_ch // 2
             out_ch = max(out_ch, 1)
             conv_layer = nn.ConvTranspose2d(in_ch, out_ch, kernel_size=(1, 9), stride=(1,2), padding=(0,4), output_padding=(0,1))
@@ -530,13 +529,15 @@ class AV_Fusion_Model(nn.Module):
         #         input_size=(latent_channels*2, output_shape[0], output_shape[1]))
         
         # x_av_cat = torch.cat((x_v, x_a), dim=1)
-
+        # re-arrange dimensions so that time dim is properly arranged for lstm
+        x_v = x_v.permute(0, 2, 1, 3)
+        x_a = x_a.permute(0, 2, 1, 3)
         x_av_cat = torch.cat((x_v, x_a), dim=2)
         print(f'X AV CAT SH {x_av_cat.shape}')
-        x_av_cat_sh = torch.flatten(x_av_cat, start_dim=-2, end_dim=-1)
+        x_av_cat = torch.flatten(x_av_cat, start_dim=-2, end_dim=-1)
         print(f'X AV CAT SH {x_av_cat.shape}')
-        self.lstm = nn.LSTM(input_size=x_av_cat_sh.shape[-1], hidden_size=256, num_layers=1, bias=False, batch_first=True, dropout=0, bidirectional=True).to("cuda")
-        av = self.lstm(x_av_cat_sh)[0]
+        self.lstm = nn.LSTM(input_size=x_av_cat.shape[-1], hidden_size=256, num_layers=1, bias=False, batch_first=True, dropout=0, bidirectional=True).to("cuda")
+        av = self.lstm(x_av_cat)[0]
         print(f'AV LSTM SH {av.shape}')
         av = torch.flatten(av, start_dim=1)
         print(f'AV FLATTENED SH {av.shape}')
@@ -548,7 +549,7 @@ class AV_Fusion_Model(nn.Module):
         print(f'AV Lin2 SH {av.shape}')
 
         with torch.no_grad():
-            x_av_fused = self.fusion_net(x_av_cat)
+            x_av_fused = self.fusion_net(x_a, x_v)
 
         print(f'FUSED SHAPE {x_av_fused.shape}')
 
@@ -627,7 +628,11 @@ class AV_Fusion_Model(nn.Module):
         for param in self.phasegram_decoder:
             param.requires_grad = False
 
-    def av_fusion_forward(self, x_av_cat):
+    def av_fusion_forward(self, x_a, x_v):
+            # re-arrange dimensions so that time dim is properly arranged for lstm
+            x_v = x_v.permute(0, 2, 1, 3)
+            x_a = x_a.permute(0, 2, 1, 3)
+            x_av_cat = torch.cat((x_v, x_a), dim=2)
             x_av_cat = torch.flatten(x_av_cat, start_dim=-2, end_dim=-1)
             av = self.lstm(x_av_cat)[0]
             av = torch.flatten(av, start_dim=1)
@@ -649,9 +654,9 @@ class AV_Fusion_Model(nn.Module):
         x_a = self.stft_encoder(x_a)
         x_v = self.phasegram_encoder(x_v)
 
-        x_av_cat = torch.cat((x_v, x_a), dim=1)
+        # x_av_cat = torch.cat((x_v, x_a), dim=1)
 
-        x_av_fused = self.fusion_net(x_av_cat)
+        x_av_fused = self.fusion_net(x_a, x_v)
         # these both share the same dims
         x_av_fused = torch.reshape(x_av_fused,
             (x_av_fused.shape[0], self.latent_channels, x_a.shape[2], x_a.shape[3]))
