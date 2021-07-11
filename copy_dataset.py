@@ -7,7 +7,7 @@ import argparse
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('-d', '--desination', type=str, default="/content/MUSICES")
+    parser.add_argument('-d', '--destination', type=str, default="/content/MUSICES")
     parser.add_argument('-s', '--source', type=str, default="/content/drive/MyDrive/MagPhaseLAVSE/MUSICES")
     parser.add_argument('-b', '--cp_buff', type=int, default=32*1024*1)
 
