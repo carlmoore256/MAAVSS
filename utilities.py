@@ -8,6 +8,7 @@ import pickle
 import subprocess
 import os
 import numpy as np
+from torch.autograd.grad_mode import F
 from torch.functional import norm
 import torchvision.transforms.functional as TF
 from math import sqrt
@@ -51,6 +52,19 @@ def load_cache_obj(path):
   filehandler = open(path, 'rb') 
   obj = pickle.load(filehandler)
   return obj
+
+def load_audio_map(base_path):
+  try:
+    mmap_path = os.path.join(base_path, "audio_memmap.memmap")
+    index_map_path = os.path.join(base_path, "audio_index_map.obj")
+    index_map = load_cache_obj(index_map_path)
+    map_len = index_map[1][-1, 1]
+    map = np.memmap(mmap_path, dtype='float32', mode='r', shape=(map_len))
+    return map, index_map
+  except:
+    print(f'No memmap found, directly loading audio instead...')
+    return None, None
+
 
 def extract_audio_from_video(input_video, output_file, sr=16000):
   print(f'extracting audio from {input_video}')
@@ -112,34 +126,37 @@ def filter_valid_videos(all_vids, fps_lower_lim=29.97002997002996, fps_upper_lim
   return valid_clips
 
 
-def extract_clips(all_vids, frames_per_clip, frame_hop, framerate):
+def clip_config_search(config, config_path="clipcache"):
+  all_configs = get_all_files(config_path, "obj")
+  for a in all_configs:
+    split = a.split(os.sep)
+    if split[-1] == "clip_config.obj":
+      cached_config = load_cache_obj(a)
+      if cached_config == config:
+        return load_cache_obj(os.path.join(os.path.split(a)[0], "video_clips.obj"))
+  return None
 
-  def process_clips():
+
+def extract_clips(all_vids, num_frames, frame_hop, framerate, cache_dir="clipcache"):
+  config = [num_frames, frame_hop, framerate]
+  cached_clips = clip_config_search(config)
+  if cached_clips is not None:
+    print("\nloading video clip slices from cache\n")
+    return cached_clips
+  else:
     from video_utils_custom import VideoClips
     print(f"processing video clips, this could take some time...")
     video_clips = VideoClips(
         all_vids,
-        clip_length_in_frames=frames_per_clip,
+        clip_length_in_frames=num_frames,
         frames_between_clips=frame_hop,
         frame_rate=framerate,
-        # num_workers=num_workers
     )
-    config = [frames_per_clip, frame_hop, framerate]
-    save_cache_obj("clipcache/video_clips.obj", video_clips)
-    # save a config
-    save_cache_obj("clipcache/clip_config.obj", config)
+    new_dir = os.path.abspath(os.path.join(cache_dir, f"{config[0]}f_{config[1]}"))
+    os.mkdir(new_dir)
+    save_cache_obj(os.path.join(new_dir, "video_clips.obj"), video_clips)
+    save_cache_obj(os.path.join(new_dir, "clip_config.obj"), config)
     return video_clips
-
-  if not os.path.isfile("clipcache/video_clips.obj"):
-    return process_clips()
-
-  elif os.path.isfile("clipcache/clip_config.obj"):
-    config = load_cache_obj("clipcache/clip_config.obj")
-    if config != [frames_per_clip, frame_hop, framerate]:
-      return process_clips()
-    else:
-      print("loading video clip slices from cache")
-      return load_cache_obj("clipcache/video_clips.obj")
 
 def save_model(path, model, overwrite=False):
   # if not overwrite:

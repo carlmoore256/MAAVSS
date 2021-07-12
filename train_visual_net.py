@@ -29,12 +29,14 @@ if __name__ == "__main__":
     preview_dims=(512, 4096)
     
     dataset = Video_Dataset(
-        frames_per_clip = config.num_frames,
+        num_frames = config.num_frames,
         frame_hop = config.frame_hop,
         framesize = config.framesize,
         autocontrast = config.autocontrast,
         data_path = config.data_path,
-        max_clip_len=config.max_clip_len
+        max_clip_len=config.max_clip_len,
+        gen_stft=False,
+        gen_video=True
     )
     train_split = int(len(dataset)*config.split)
     val_split = len(dataset) - train_split

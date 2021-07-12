@@ -2,206 +2,237 @@ from random import sample
 import torch
 from torch.utils import data
 from av_dataset import AV_Dataset
-from avse_model import AV_Model_STFT
-import argparse
+from avse_model import AV_Fusion_Model
 import matplotlib.pyplot as plt
 import numpy as np
 import wandb
-import torchaudio
+import utilities
+from run_config import model_args
+import torchvision.transforms.functional as TF
+
+def stft_ae_step(y_stft, model, optimizer, loss_f):
+    optimizer.zero_grad()
+    yh_stft = model.audio_ae_forward(y_stft)
+    loss = loss_f(yh_stft, y_stft)
+    loss.backward()
+    optimizer.step()
+    return loss, yh_stft
+
+def phasegram_step(attn, p_size, model, optimizer, loss_f):
+    # attention frames generate the phasegram
+    y_phasegram = utilities.video_phasegram(attn, 
+                            resize=(p_size, p_size),
+                            diff=True,
+                            cumulative=True)
+    yh_phasegram = model.visual_ae_forward(y_phasegram)
+
+    loss = loss_f(yh_phasegram, y_phasegram)
+    loss.backward()
+    optimizer.step()
+    return loss, yh_phasegram
+
+def av_fusion_step(x_stft, y_stft, attn, p_size, model, optimizer, loss_f):
+    # attention frames generate the phasegram
+    y_phasegram = utilities.video_phasegram(attn, 
+                            resize=(p_size, p_size),
+                            diff=True,
+                            cumulative=True)
+
+    yh_stft, yh_phasegram, av_fused = model(x_stft, y_phasegram)
+
+    a_loss = loss_f(yh_phasegram, y_phasegram)
+    v_loss = loss_f(yh_stft, y_stft)
+    loss = a_loss + v_loss
+    loss.backward()
+    optimizer.step()
+    return loss, a_loss, v_loss, yh_stft, yh_phasegram, av_fused
+    
 
 if __name__ == "__main__":
-  wandb.init(project='AV_Fusion', entity='carl_m', config={"dataset":"MUSIC"})
+    wandb.init(project='AV_Fusion', entity='carl_m', config={"dataset":"MUSIC"})
+    config = wandb.config
+    args = model_args()
+    wandb.config.update(args)
 
-  # IF CHANING NUM_FRAMES, delete cached video frames
+    DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-  parser = argparse.ArgumentParser()
-  parser.add_argument('-b', '--batch_size', type=int, default=4, metavar='N')
-  parser.add_argument('-lr', '--learning_rate', type=float, default=1e-5)
-  parser.add_argument("-e", '--epochs', type=int, default=1000, help="epochs")
-  parser.add_argument('--data_path', type=str, default="data/raw", help="path to dataset")
-  parser.add_argument('--num_frames', type=int, default=6, help="number of consecutive video frames (converted to attention maps)")
-  parser.add_argument('--frame_hop', type=int, default=2, help="hop between each clip example in a video")
-  parser.add_argument('--framerate', type=int, default=30, help="video fps")
-  parser.add_argument('--framesize', type=int, default=256, help="scaled video frame dims (converted to attention maps)")
-  parser.add_argument('--fft_len', type=int, default=256, help="size of fft")
-  parser.add_argument('-a', '--hops_per_frame', type=int, default=8, help="num hops per frame (a)")
-  parser.add_argument('--samplerate', type=int, default=16000, help="audio samplerate (dependent on dataset)")
-  parser.add_argument('--center_fft', type=bool, default=True, help="interlace and center fft")
-  parser.add_argument('--use_polar', type=bool, default=False, help="fft uses polar coordinates instead of rectangular")
-  parser.add_argument('--normalize_fft', type=bool, default=True, help="normalize input fft by 1/n")
-  parser.add_argument('--noise_scalar', type=float, default=0.1, help="scale gaussian noise by N for data augmentation (applied to x)")
-  parser.add_argument('--cb_freq', type=int, default=100, help="wandb callback frequency in epochs")
-  parser.add_argument('--max_clip_len', type=int, default=None, help="maximum clip length to load (speed up loading)")
+    config.hop, audio_sample_len, config.num_fft_frames = utilities.calc_hop_size(
+        config.num_frames,
+        config.hops_per_frame, 
+        config.framerate, 
+        config.samplerate
+    )
 
-  args = parser.parse_args()
-  config = wandb.config
-  wandb.config.update(args)
+    preview_dims=(512, 4096)
+    
+    dataset = AV_Dataset(
+        num_frames=config.num_frames,
+        frame_hop=config.frame_hop,
+        framerate=config.framerate,
+        samplerate = config.samplerate,
+        fft_len=config.fft_len,
+        hops_per_frame=config.hops_per_frame,
+        noise_std=config.noise_scalar,
+        use_polar = config.use_polar,
+        normalize_input_fft = config.normalize_fft,
+        normalize_output_fft = config.normalize_output_fft,
+        autocontrast=config.autocontrast,
+        compress_audio=config.compress_audio,
+        shuffle_files=True,
+        data_path=config.data_path,
+        max_clip_len=config.max_clip_len,
+        gen_stft=True,
+        gen_video=False
+    )
 
-  DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    train_split = int(len(dataset)*config.split)
+    val_split = len(dataset) - train_split
+    train_dset, val_dset = torch.utils.data.random_split(dataset, 
+                                                    [train_split, val_split])
 
-  config.hop = int((config.samplerate/config.framerate)/config.hops_per_frame)
-  # therefore, fft size should = (..., 2, fft_len/2+1, num_frames * a)
-  # make sure num_frames > hop
-  
-  dataset = AV_Dataset(
-    frames_per_clip=config.num_frames,
-    frame_hop=config.frame_hop,
-    framerate=config.framerate,
-    framesize=config.framesize,
-    fft_len=config.fft_len,
-    hop=config.hop,
-    hops_per_frame=config.hops_per_frame,
-    samplerate=config.samplerate,
-    noise_std=config.noise_scalar,
-    center_fft=config.center_fft,
-    use_polar=config.use_polar,
-    normalize_input_fft=config.normalize_fft,
-    shuffle_files=True,
-    num_workers=1,
-    data_path=config.data_path,
-    max_clip_len=config.max_clip_len
-  )
-
-  dataloader = torch.utils.data.DataLoader(dataset,
+    train_gen = torch.utils.data.DataLoader(train_dset,
                                           batch_size=config.batch_size,
-                                          shuffle=True)
-  dataloader = iter(dataloader)
+                                          shuffle=True,
+                                          num_workers=0)
+    val_gen = torch.utils.data.DataLoader(val_dset,
+                                          batch_size=config.batch_size,
+                                          shuffle=True,
+                                          num_workers=0)
 
-  x_stft, y_stft, attn, audio, video = next(dataloader)
+    model = AV_Fusion_Model([config.batch_size, 2, config.num_fft_frames, config.fft_len//2], 
+                        [config.batch_size, 1, config.num_frames, config.p_size*config.p_size],
+                        config.hops_per_frame,
+                        ).to(DEVICE)
 
-  model = AV_Model_STFT(x_stft.shape, attn.shape, config.hops_per_frame).to(DEVICE)
+    mse_loss = torch.nn.MSELoss()
+        
+    model.toggle_phasegram_ae_grads(False)
+    model.toggle_stft_ae_grads(False)
+    model.toggle_fusion_grads(True)
 
-  print(model)
+    optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
 
+    if config.saved_model != None:
+        print(f'Loading model weights from {config.saved_model}')
+        model.load_state_dict(torch.load(config.saved_model), strict=False)
+    if args.c or args.checkpoint is not None:
+        utilities.load_checkpoint(model, optimizer, args.cp_dir, args.c, args.checkpoint, config.cp_load_opt)
+        
+    t_gen = iter(train_gen)
+    v_gen = iter(val_gen)
+    last_loss = 1e5
 
+    train_a = True
+    train_v = False
+    train_av = False
 
-  mse_loss = torch.nn.MSELoss()
-  # cosine_loss = torch.nn.CosineSimilarity()
-  # optimizer = torch.optim.SGD(model.parameters(), lr=config.learning_rate)
-  optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
-  audio_ae_opt = torch.optim.Adam(model.audio_ae.parameters(), lr=config.learning_rate)
-  visual_ae_opt = torch.optim.Adam(model.visual_ae.parameters(), lr=config.learning_rate)
-  training_ae = True
-  model.toggle_av_grads(False)
+    for e in range(config.epochs):
+        if e + 1 * config.steps_per_epoch > len(train_gen):
+            t_gen = iter(train_gen)
+        if e + 1 * config.val_steps > len(val_gen):
+            v_gen = iter(val_gen)
 
-  for i in range(config.epochs):
-      # optimizer.zero_grad()
+        model.train()
 
-      try:
-        x_stft, y_stft, attn, audio, video = next(dataloader)
-      except Exception as e:
-        print(f"\nERROR LOADING EXAMPLE: {e}\n")
-        continue
+        for i in range(config.steps_per_epoch):
+            optimizer.zero_grad()
 
-      y_stft.to(DEVICE)
-      x_stft.to(DEVICE)
-      attn.to(DEVICE)
+            # if i == len(t_gen):
+            #     t_gen = iter(train_gen)
 
-      if training_ae: # train the ae
-        audio_ae_opt.zero_grad()
-        visual_ae_opt.zero_grad()
+            if train_a:
+                _, y_stft, audio = next(t_gen)
+                loss, yh_stft = stft_ae_step(
+                    y_stft.to(DEVICE),
+                    model,
+                    optimizer,
+                    mse_loss
+                )
+                wandb.log({"stft loss": loss})
+            
+            if train_v:
+                attn, video = next(t_gen)
+                loss, yh_phasegram = phasegram_step(
+                    attn.to(DEVICE),
+                    config.p_size,
+                    model,
+                    optimizer,
+                    mse_loss
+                )
+                wandb.log({"phasegram_loss":loss } )
 
-        yh_stft, yh_attn = model(y_stft, attn, train_ae=True)
-        a_loss = mse_loss(yh_stft, y_stft)
-        v_loss = mse_loss(yh_attn, attn)
-        a_loss.backward()
-        v_loss.backward()
-        audio_ae_opt.step()
-        visual_ae_opt.step()
+            if train_av:
+                x_stft, y_stft, attn, audio, video = next(t_gen)
+                loss, a_loss, v_loss, yh_stft, yh_phasegram, av_fused = av_fusion_step(
+                    x_stft.to(DEVICE), 
+                    y_stft.to(DEVICE), 
+                    attn.to(DEVICE), 
+                    config.p_size, 
+                    model, 
+                    optimizer, 
+                    mse_loss
+                )
 
-        loss = a_loss + v_loss
+            # wandb.log({ "loss": loss,
+            #             "stft_loss":a_loss,
+            #             "phasegram_loss":v_loss } )
 
-        print(f"step:{i} training autoencoder - loss {loss} a_loss:{a_loss} v_loss:{v_loss}")
-        if loss < 1e-3:
-          print(f'loss has lowered far enough, training main model...')
-          model.toggle_av_grads(True)
-          training_ae = False
+            # if i % config.cb_freq == 0:
+            #     print(f'epoch {e} step {i}/{config.steps_per_epoch} loss {loss.sum()} a_loss {a_loss} v_loss {v_loss}')
+            #     stft_plot = utilities.stft_ae_image_callback(y_stft[0], yh_stft[0])
+            #     frame_plot = utilities.video_phasegram_image(
+            #         y_phasegram[0], yh_phasegram[0], attn[0], preview_dims)
+            #     wandb.log( {"frames": wandb.Image(frame_plot),
+            #                 "stft": wandb.Image(stft_plot)} )
+        
+        model.eval()
+        avg_loss = 0
 
-      else:
-        optimizer.zero_grad()
-        yh_stft, yh_attn = model(x_stft, attn, train_ae=False)
+        # validation
+        for i in range(config.val_steps):
+            x_stft_v, y_stft_v, attn_v, audio_v, video_v = next(v_gen)
+            x_stft_v = x_stft_v.to(DEVICE)
+            y_stft_v = y_stft_v.to(DEVICE)
+            attn_v = attn_v.to(DEVICE)
+            with torch.no_grad():
+                y_pgram_v = utilities.video_phasegram(attn_v, 
+                        resize=(config.p_size, config.p_size),
+                        diff=True,
+                        cumulative=True)
+                y_pgram_v = y_pgram_v.to(DEVICE)
+                yh_stft_v, yh_pgram_v, av_fused_v = model(x_stft_v, y_pgram_v)
+                # print(f"yh_stft_v {yh_stft_v.device} y_stft_v {y_stft_v.device}")
+                a_loss_val = mse_loss(yh_stft_v, y_stft_v.to(DEVICE))
+                v_loss_val = mse_loss(yh_pgram_v, y_pgram_v)
+                val_loss = a_loss_val + v_loss_val
+            avg_loss += val_loss
+            wandb.log({ "val_loss": val_loss,
+                        "val_loss_stft":a_loss_val,
+                        "val_loss_phasegram":v_loss_val })
 
-        # A LOSS AS A SUM MIGHT BE AN ISSUE?
-        a_loss = mse_loss(yh_stft, y_stft).sum()
-        v_loss = mse_loss(yh_attn, attn)
+        avg_loss /= config.val_steps
 
-        loss = a_loss + v_loss
-
-        loss.backward()
-        optimizer.step()
-
-        print(f"step:{i} loss: {loss} a_loss:{a_loss} v_loss:{v_loss}")
-
-      wandb.log({ "loss": loss,
-                  "a_loss": a_loss,
-                  "v_loss": v_loss} )
-
-      if i % config.cb_freq == 0:
-        fig=plt.figure(figsize=(8, 5))
-        plt.tight_layout()
-
-        cols = config.num_frames
-        rows = 3
-
-        for a in range(cols * rows):
-          if a < cols:
-              img = video[0, 0, a, :, :].cpu().detach().numpy()
-          elif a < cols * 2:
-              img = attn[0, 0, a%cols, :, :].cpu().detach().numpy()
-          else:
-              img = yh_attn[0, 0, a%cols, :, :].cpu().detach().numpy()
-          fig.add_subplot(rows, cols, a+1)
-          plt.xticks([])
-          plt.yticks([])
-          plt.imshow(img)
-        fig.canvas.draw()
-        frame_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-        frame_plot = frame_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-
-        fig=plt.figure(figsize=(8, 3))
-        plt.tight_layout()
-
-        x_stft_ex = x_stft[0].cpu().detach().numpy()
-        plt.subplot(1,6,1)
-        plt.axis("off")
-        plt.title("x (real)")
-        plt.imshow(x_stft_ex[0].T)
-
-        plt.subplot(1,6,2)
-        plt.axis("off")
-        plt.title("x (imag)")
-        plt.imshow(x_stft_ex[1].T)
-
-        y_stft_ex = y_stft[0].cpu().detach().numpy()
-        plt.subplot(1,6,3)
-        plt.axis("off")
-        plt.title("y (real)")
-        plt.imshow(y_stft_ex[0].T)
-        plt.subplot(1,6,4)
-        plt.axis("off")
-        plt.title("y (imag)")
-        plt.imshow(y_stft_ex[1].T)
-
-        yh_stft_ex = yh_stft[0].cpu().detach().numpy()
-        plt.subplot(1,6,5)
-        plt.axis("off")
-        plt.title("ŷ (real)")
-        plt.imshow(yh_stft_ex[0].T)
-        plt.subplot(1,6,6)
-        plt.axis("off")
-        plt.title("ŷ (imag)")
-        plt.imshow(yh_stft_ex[1].T)
-
-        fig.canvas.draw()
-        fft_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-        fft_plot = fft_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-        p_audio = dataset.istft(yh_stft[0])
+        if avg_loss < last_loss and e > 0:
+            if not args.no_save:
+                utilities.save_checkpoint(model.state_dict(), 
+                                        optimizer.state_dict(),
+                                        e, avg_loss,
+                                        wandb.run.name,
+                                        config.cp_dir)
+        last_loss = avg_loss
+        
+        frame_plot = utilities.video_phasegram_image(
+            y_pgram_v[0], yh_pgram_v[0], attn_v[0], preview_dims)
+        stft_plot = utilities.stft_ae_image_callback(y_stft_v[0], yh_stft_v[0])
+        p_audio = dataset.istft(yh_stft_v[0].cpu().detach())
+        latent_plot = utilities.latent_fusion_image_callback(av_fused_v[0].cpu().detach().numpy())
 
         wandb.log( {
-            "video_frames": wandb.Image(frame_plot),
-            "fft_frames": wandb.Image(fft_plot),
-            "audio_input": wandb.Audio(audio[0], sample_rate=config.samplerate),
+            "video_frames_val": wandb.Image(frame_plot),
+            "stft_frames_val": wandb.Image(stft_plot),
+            "latent_plot": wandb.Image(latent_plot),
+            "audio_target": wandb.Audio(audio_v[0], sample_rate=config.samplerate),
             "audio_output": wandb.Audio(p_audio, sample_rate=config.samplerate)
         } )
-
-torch.save(model.state_dict(), f"saved_models/model_e{config.epochs}_l{loss}")
+    if not args.no_save:
+        utilities.save_model(f"saved_models/avf-v-ae-{wandb.run.name}.pt", model, overwrite=True)

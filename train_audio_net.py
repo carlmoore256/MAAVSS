@@ -1,7 +1,8 @@
+from enum import auto
 from random import sample
 import torch
 from torch.utils import data
-from av_dataset import STFT_Dataset
+from av_dataset import AV_Dataset, STFT_Dataset
 from avse_model import AV_Fusion_Model
 import argparse
 import matplotlib.pyplot as plt
@@ -10,6 +11,7 @@ import wandb
 import utilities
 import torchvision.transforms.functional as TF
 from run_config import model_args
+import time
 
 if __name__ == "__main__":
     wandb.init(project='AV_Fusion', entity='carl_m', config={"dataset":"MUSIC"})
@@ -28,16 +30,24 @@ if __name__ == "__main__":
 
     preview_dims=(512, 4096)
     
-    dataset = STFT_Dataset(
+    dataset = AV_Dataset(
+        num_frames=config.num_frames,
+        frame_hop=config.frame_hop,
+        framerate=config.framerate,
         samplerate = config.samplerate,
-        fft_len = config.fft_len,
-        hop = config.hop,
-        audio_sample_len = audio_sample_len,
+        fft_len=config.fft_len,
+        hops_per_frame=config.hops_per_frame,
+        noise_std=config.noise_scalar,
+        use_polar = config.use_polar,
         normalize_input_fft = config.normalize_fft,
         normalize_output_fft = config.normalize_output_fft,
-        use_polar = config.use_polar,
+        autocontrast=config.autocontrast,
+        compress_audio=config.compress_audio,
+        shuffle_files=True,
         data_path=config.data_path,
-        max_clip_len=config.max_clip_len
+        max_clip_len=config.max_clip_len,
+        gen_stft=True,
+        gen_video=False
     )
 
     train_split = int(len(dataset)*config.split)
@@ -85,7 +95,7 @@ if __name__ == "__main__":
     for e in range(config.epochs):
 
         model.train()
-
+        t1 = time.perf_counter()
         for i, d in enumerate(train_gen):
             optimizer.zero_grad()
             x_stft = d[0]
@@ -103,7 +113,9 @@ if __name__ == "__main__":
             wandb.log({ "loss": loss } )
 
             if i % config.cb_freq == 0:
-                print(f'epoch {e} step {i}/{len(train_gen)} loss {loss.sum()}')
+                t2 = time.perf_counter()
+                print(f'epoch {e} step {i}/{len(train_gen)} loss {loss.sum()} time {t2 - t1}')
+                t1 = time.perf_counter()
         
         model.eval()
         avg_loss = 0
@@ -122,7 +134,7 @@ if __name__ == "__main__":
 
         avg_loss /= len(val_gen)
 
-        if avg_loss < best_loss:
+        if avg_loss < best_loss and e > 0:
             best_loss = avg_loss
             if not args.no_save:
                 print(f'saving {wandb.run.name} checkpoint - {best_loss} best avg loss (val)')

@@ -44,7 +44,7 @@ if __name__ == "__main__":
     num_fft_frames = audio_sample_len // config.hop
     
     dataset = Video_Dataset(
-        frames_per_clip = config.num_frames,
+        num_frames = config.num_frames,
         frame_hop = config.frame_hop,
         framesize = config.framesize,
         autocontrast = config.autocontrast,

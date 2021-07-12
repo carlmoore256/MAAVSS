@@ -28,20 +28,23 @@ if __name__ == "__main__":
     preview_dims=(512, 4096)
     
     dataset = AV_Dataset(
-        frames_per_clip = config.num_frames,
-        frame_hop = config.frame_hop,
-        framesize = config.framesize,
-        samplerate=config.samplerate,
+        num_frames=config.num_frames,
+        frame_hop=config.frame_hop,
+        framerate=config.framerate,
+        samplerate = config.samplerate,
         fft_len=config.fft_len,
-        hop=config.hop,
         hops_per_frame=config.hops_per_frame,
         noise_std=config.noise_scalar,
-        use_polar=config.use_polar,
-        normalize_input_fft=config.normalize_fft,
-        normalize_output_fft=config.normalize_output_fft,
-        autocontrast = config.autocontrast,
-        data_path = config.data_path,
-        max_clip_len=config.max_clip_len
+        use_polar = config.use_polar,
+        normalize_input_fft = config.normalize_fft,
+        normalize_output_fft = config.normalize_output_fft,
+        autocontrast=config.autocontrast,
+        compress_audio=config.compress_audio,
+        shuffle_files=True,
+        data_path=config.data_path,
+        max_clip_len=config.max_clip_len,
+        gen_stft=True,
+        gen_video=True
     )
 
     train_split = int(len(dataset)*config.split)
@@ -88,7 +91,6 @@ if __name__ == "__main__":
         print(f'Loading model weights from {config.saved_model}')
         model.load_state_dict(torch.load(config.saved_model), strict=False)
 
-    print(f'LOAD OPT {args.cp_load_opt}')
     if args.c or args.checkpoint is not None:
         utilities.load_checkpoint(model, optimizer, args.cp_dir, args.c, args.checkpoint, config.cp_load_opt)
 

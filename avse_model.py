@@ -540,7 +540,7 @@ class AV_Fusion_Model(nn.Module):
 
         # conisder making bidirectional
         self.lstm = nn.LSTM(input_size=x_av_cat.shape[-1], hidden_size=256, num_layers=1, 
-                            bias=False, batch_first=True, dropout=0, bidirectional=False).to("cuda")
+                            bias=False, batch_first=True, dropout=0, bidirectional=True).to("cuda")
 
         # self.lstm.flatten_parameters()
         av = self.lstm(x_av_cat)[0]

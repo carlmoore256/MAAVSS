@@ -14,7 +14,9 @@ def model_args():
     parser.add_argument('--framerate', type=int, default=30, help="video fps")
     parser.add_argument('--framesize', type=int, default=256, help="scaled video frame dims (converted to attention maps)")
     parser.add_argument('--p_size', type=int, default=64, help="downsampled phasegram size")
+    
     parser.add_argument('--autocontrast', type=bool, default=False, help="automatic video contrast")
+    parser.add_argument('--compress_audio', action="store_true", help="audio compression")
 
     parser.add_argument('--fft_len', type=int, default=256, help="size of fft")
     parser.add_argument('-a', '--hops_per_frame', type=int, default=8, help="num hops per frame (a)")
