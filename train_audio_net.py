@@ -115,7 +115,24 @@ if __name__ == "__main__":
             if i % config.cb_freq == 0:
                 t2 = time.perf_counter()
                 print(f'epoch {e} step {i}/{len(train_gen)} loss {loss.sum()} time {t2 - t1}')
+                stft_plot = utilities.stft_ae_image_callback(y_stft[0], yh_stft[0])
+                p_audio = dataset.istft(yh_stft[0].cpu().detach())
+
+                wandb.log( {
+                    "stft_train": wandb.Image(stft_plot),
+                    "audio_input_train": wandb.Audio(audio[0], sample_rate=config.samplerate),
+                    "audio_output_train": wandb.Audio(p_audio, sample_rate=config.samplerate)
+                } )
                 t1 = time.perf_counter()
+            
+            if not args.no_save and config.cp_freq != 0 and i % config.cp_freq == 0:
+                print(f'saving {wandb.run.name} checkpoint')
+                utilities.save_checkpoint(model.state_dict(), 
+                                optimizer.state_dict(),
+                                e, loss,
+                                f'train_{wandb.run.name}',
+                                config.cp_dir)
+        
         
         model.eval()
         avg_loss = 0
@@ -148,9 +165,9 @@ if __name__ == "__main__":
         p_audio = dataset.istft(yh_stft_val[0].cpu().detach())
 
         wandb.log( {
-            "fft_frames_val": wandb.Image(stft_plot),
-            "audio_input": wandb.Audio(audio_val[0], sample_rate=config.samplerate),
-            "audio_output": wandb.Audio(p_audio, sample_rate=config.samplerate)
+            "stft_val": wandb.Image(stft_plot),
+            "audio_input_val": wandb.Audio(audio_val[0], sample_rate=config.samplerate),
+            "audio_output_val": wandb.Audio(p_audio, sample_rate=config.samplerate)
         } )
     if not args.no_save:
         utilities.save_model(f"saved_models/avf-a-ae-{wandb.run.name}", model, overwrite=True)

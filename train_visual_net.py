@@ -1,7 +1,7 @@
 from random import sample
 import torch
 from torch.utils import data
-from av_dataset import Video_Dataset
+from av_dataset import AV_Dataset
 from avse_model import AV_Fusion_Model
 import argparse
 import matplotlib.pyplot as plt
@@ -28,7 +28,7 @@ if __name__ == "__main__":
 
     preview_dims=(512, 4096)
     
-    dataset = Video_Dataset(
+    dataset = AV_Dataset(
         num_frames = config.num_frames,
         frame_hop = config.frame_hop,
         framesize = config.framesize,

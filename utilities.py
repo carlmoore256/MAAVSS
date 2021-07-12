@@ -131,6 +131,7 @@ def clip_config_search(config, config_path="clipcache"):
   for a in all_configs:
     split = a.split(os.sep)
     if split[-1] == "clip_config.obj":
+      print(split[-1])
       cached_config = load_cache_obj(a)
       if cached_config == config:
         return load_cache_obj(os.path.join(os.path.split(a)[0], "video_clips.obj"))
@@ -270,7 +271,7 @@ def video_phasegram_image(y_phasegram, yh_phasegram, frames, dims=(512, 2048)):
     return frame_plot
 
 def stft_ae_image_callback(y_stft, yh_stft):
-  fig=plt.figure(figsize=(7, 5))
+  fig=plt.figure(figsize=(6, 5))
   plt.tight_layout()
 
   y_stft_ex = y_stft.cpu().detach().numpy()

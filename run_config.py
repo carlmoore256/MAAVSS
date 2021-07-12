@@ -39,5 +39,7 @@ def model_args():
     parser.add_argument('--cp_load_opt', action="store_true", help="load checkpoint optimizer config")
     parser.add_argument('-c', action="store_true", help="auto-loads the last saved checkpoint")
     parser.add_argument('--no_save', action="store_true", help="disable saving")
+    parser.add_argument('--cp_freq', type=int, default=0, help="checkpoint save frequency")
+    
     args = parser.parse_args()
     return args
