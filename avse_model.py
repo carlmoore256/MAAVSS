@@ -678,6 +678,7 @@ class AV_Fusion_Model(nn.Module):
         return x_a
 
     def forward(self, x_a, x_v):
+
         x_a_enc = self.stft_encoder(x_a)
         x_v_enc = self.phasegram_encoder(x_v)
 
@@ -699,10 +700,10 @@ class AV_Fusion_Model(nn.Module):
 
 
         x_a_out = self.a_fc1(x_av_fused)
-        x_a_out = F.leaky_relu(x_a_out, negative_slope=0.3)
+        # x_a_out = F.leaky_relu(x_a_out, negative_slope=0.3)
 
         x_v_out = self.v_fc1(x_av_fused)
-        x_v_out = F.leaky_relu(x_v_out, negative_slope=0.3)
+        # x_v_out = F.leaky_relu(x_v_out, negative_slope=0.3)
 
         x_v_out = x_v_out.view(x_v.shape)
         x_a_out = x_a_out.view(x_a.shape)

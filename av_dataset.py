@@ -10,19 +10,6 @@ import utilities
 import os
 import torch.nn.functional as F
 
-def audio_transforms(self, audio, sr, desired_sr, normalize=True, compress=False):
-  if audio.shape[0] > 1:
-    audio /= audio.shape[0]
-  audio = torch.sum(audio, dim=0)
-  if normalize:
-    audio *= torch.max(torch.abs(audio))
-  if sr != self.samplerate:
-    resamp = torchaudio.transforms.Resample(orig_freq=sr, new_freq=desired_sr)
-    audio = resamp(audio)
-  if compress:
-    audio = torchaudio.functional.contrast(audio) # applies compression
-  return audio
-
 class AV_Dataset():
 
     # num vid frames -> how many video frames to extract flow data from, size of 4D tensor
@@ -101,13 +88,13 @@ class AV_Dataset():
           random.shuffle(all_vids)
 
         # if gen_video:
-        self.video_clips = utilities.extract_clips(all_vids,
+        self.video_clips = utilities.extract_clips(all_vids[:10],
                                               num_frames,
                                               frame_hop,
                                               None)
 
         # self.audio_sample_len = int((samplerate/framerate) * num_frames)
-        self.save_output_examples = True
+        self.save_output_examples = False
 
         self.audio_memmap, self.audio_index_map = utilities.load_audio_map(data_path)
 
@@ -212,22 +199,6 @@ class AV_Dataset():
     def get_av_pair(self, idx):
       video, _, info, video_idx, clip_idx = self.video_clips.get_clip(idx)
       audio = self.get_audio(idx, info["video_fps"])
-      # video_path = self.video_clips.video_paths[video_idx]
-      # audio_path = utilities.get_paired_audio(video_path, extract=True)
-      # if audio_path is None:
-      #   audio = torch.zeros(self.audio_sample_len)
-      #   sr = self.samplerate
-      # else:
-      #   # audio, sr = torchaudio.load(audio_path)
-      #   seconds_start = (clip_idx * self.frame_hop) / info["video_fps"]
-      #   samples_start = round(seconds_start * self.samplerate)
-      #   # does not work for now
-      #   # if self.backend == "sox_io":
-      #   #   audio, sr = torchaudio.load(audio_path, frame_offset=samples_start, num_frames=samples_start+self.audio_sample_len)
-      #   # else:
-      #   audio, sr = torchaudio.load(audio_path)
-      #   audio = audio[:, samples_start:samples_start+self.audio_sample_len]
-        # audio = torch.sum(audio, dim=0)
       return video, audio, info["video_fps"], self.samplerate
 
     def get_audio(self, idx, fps):
@@ -248,19 +219,8 @@ class AV_Dataset():
       return audio
 
     def gen_av_example(self, idx):
-      # valid_example = False
-      # while not valid_example:
-        # video, audio, info, video_idx = self.video_clips.get_clip(idx)
-        # video, audio, fps, sr = self.get_av_pair(idx)
       video, _, info, video_idx, clip_idx = self.video_clips.get_clip(idx)
       audio = self.get_audio(idx, info["video_fps"])
-
-        # if audio.shape[0] != 0:
-        #   valid_example = True
-        # else:
-        #   idx += 1
-
-      # audio = self.audio_transforms(audio, sr)
       y_stft = self.stft(audio)
       if self.normalize_output_fft:
         y_stft *= 1/torch.max(torch.abs(y_stft))
@@ -284,34 +244,13 @@ class AV_Dataset():
       attn = attn.permute(1,0,2,3)
       return x_stft, y_stft, attn, audio, video
 
-
     def gen_stft_example(self, idx):
-      # video_idx, clip_idx = self.video_clips.get_clip_location(idx)
-      # seconds_start = (clip_idx * self.frame_hop) / self.framerate
-      
-      # if self.use_audio_memmap:
-      #   # indexes = self.audio_index_map[0]
-      #   samples_start = round(seconds_start * self.samplerate)
-      #   idx_map_idx = self.vc_path_idxs[video_idx]
-      #   mmap_idx = self.audio_index_map[1][idx_map_idx]
-      #   audio = self.audio_memmap[mmap_idx[0]+samples_start:mmap_idx[0]+samples_start+self.audio_sample_len]
-      #   audio = torch.as_tensor(audio)
-      #   audio = self.audio_transforms(audio, self.samplerate, normalize=False)
-      # else:
-      #   video_path = self.video_clips.video_paths[video_idx]
-      #   audio_path = utilities.get_paired_audio(video_path, extract=True)
-      #   info = torchaudio.info(audio_path)
-      #   sr = info.sample_rate
-      #   samples_start = np.random.randint(0,high=info.num_frames-self.audio_sample_len-1)
-      #   audio, sr = torchaudio.load(audio_path, samples_start, num_frames=self.audio_sample_len)
-      #   audio = self.audio_transforms(audio, sr, normalize=False)
       audio = self.get_audio(idx, self.framerate)
       y_stft = self.stft(audio)
       y_stft = y_stft.permute(2, 1, 0)
       if self.normalize_output_fft:
         y_stft *= 1/torch.max(torch.abs(y_stft))
       x_stft = self.add_noise(y_stft)
-
       return x_stft, y_stft, audio
 
     def gen_video_example(self, idx):
@@ -550,7 +489,4 @@ if __name__ == "__main__":
 
     for i in range(10):
         print(next(dataloader)[0].shape)
-
-                
-            
 

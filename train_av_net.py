@@ -187,9 +187,9 @@ if __name__ == "__main__":
         latent_plot = utilities.latent_fusion_image_callback(av_fused_v[0].cpu().detach().numpy())
 
         wandb.log( {
-            "video_frames_val": wandb.Image(frame_plot),
-            "stft_frames_val": wandb.Image(stft_plot),
-            "latent_plot": wandb.Image(latent_plot),
+            "video_frames_val": frame_plot,
+            "stft_frames_val": stft_plot,
+            "latent_plot": latent_plot,
             "audio_target": wandb.Audio(audio_v[0], sample_rate=config.samplerate),
             "audio_output": wandb.Audio(p_audio, sample_rate=config.samplerate)
         } )

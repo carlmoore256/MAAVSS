@@ -265,10 +265,10 @@ def video_phasegram_image(y_phasegram, yh_phasegram, frames, dims=(512, 2048)):
     plt.axis("off")
 
     fig.canvas.draw()
-    frame_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-    frame_plot = frame_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    # frame_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+    # frame_plot = frame_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
     plt.close()
-    return frame_plot
+    return fig
 
 def stft_ae_image_callback(y_stft, yh_stft):
   fig=plt.figure(figsize=(6, 5))
@@ -295,10 +295,10 @@ def stft_ae_image_callback(y_stft, yh_stft):
   plt.imshow(yh_stft_ex[1].T)
 
   fig.canvas.draw()
-  fft_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-  fft_plot = fft_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+  # fft_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+  # fft_plot = fft_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
   plt.close()
-  return fft_plot
+  return fig
 
 # return a plot of an image representing latent fused dimension
 def latent_fusion_image_callback(latent):
@@ -319,10 +319,10 @@ def latent_fusion_image_callback(latent):
   plt.axis("off")
   plt.imshow(canvas)
   fig.canvas.draw()
-  latent_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
-  latent_plot = latent_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+  # latent_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+  # latent_plot = latent_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
   plt.close()
-  return latent_plot
+  return fig
 
 def disp_model_param_info(model):
   for name, param in model.named_parameters():

@@ -21,6 +21,5 @@ if __name__ == "__main__":
     total_frames = total_clips * frame_buffer
     total_pixels = total_frames * output_dims[0] * output_dims[1]
     print(f'total clips: {total_clips} total frames {total_frames} total pixels {total_pixels}')
-    # 3991352
-    # 100000
+
     map = np.memmap(memmap_path, dtype='float32', mode='w+', shape=(2000000, output_dims[0], output_dims[1]))
