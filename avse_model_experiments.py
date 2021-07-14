@@ -404,16 +404,14 @@ class AV_Fusion_Model_Frames(nn.Module):
             if output_shape[1] > x_v.shape[-1]:
                 stride[1] = 2
                 output_shape[1] = output_shape[1] // 2
-
             padding = [1, 4]
-            if first_layer and spatial_dim % 2 == 1:
+            if first_layer:
               first_layer = False
               padding[1] = 3
-              
             modules.append(nn.Conv2d(in_ch, out_ch, 
                                     kernel_size=(3, 9), 
                                     stride=tuple(stride), 
-                                    padding=(1,4),
+                                    padding=tuple(padding),
                                     bias=False))
             modules.append(nn.BatchNorm2d(out_ch))
             modules.append(nn.Tanh())

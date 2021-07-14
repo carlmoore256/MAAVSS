@@ -75,7 +75,16 @@ def train():
                           latent_channels=config.latent_chan,
                           fc_size=config.fc_size
                           ).to(DEVICE)
-
+      # model_artifact = wandb.Artifact(
+      #   "AV-Fusion-Convnet",
+      #   type='model', 
+      #   metadata=dict(config))
+      # save_name = f"saved_models/{wandb.run.name}.pt"
+      # utilities.save_model(save_name, model, overwrite=True)
+      # model_artifact.add_file(save_name)
+      # wandb.save(save_name)
+      # run.log_artifact(model_artifact)
+      
       mse_loss = torch.nn.MSELoss()
       optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
 
