@@ -225,11 +225,17 @@ def video_phasegram(frames, resize=None, diff=True, cumulative=True, normalize=T
   return phasegram
 
 def generate_filmstrip(frames, dims):
-  frames = frames.squeeze(0)
-  filmstrip = torch.zeros((frames.shape[2], frames.shape[1] * frames.shape[0]))
-  for i, f in enumerate(frames):
-    filmstrip[:, i*frames.shape[1]:i*frames.shape[1]+frames.shape[2]] = f
-  filmstrip = TF.resize(filmstrip.unsqueeze(0), dims, interpolation=TF.InterpolationMode.NEAREST)
+  if frames.shape[0] == 1:
+    frames = frames.squeeze(0)
+    filmstrip = torch.zeros((frames.shape[2], frames.shape[1] * frames.shape[0]))
+    for i, f in enumerate(frames):
+      filmstrip[:, i*frames.shape[1]:i*frames.shape[1]+frames.shape[2]] = f
+    filmstrip = TF.resize(filmstrip.unsqueeze(0), dims, interpolation=TF.InterpolationMode.NEAREST)
+  else:
+    filmstrip = torch.zeros((frames.shape[3], frames.shape[2] * frames.shape[1], frames.shape[0]))
+    frames = frames.permute(1, 2, 3, 0)
+    for i, f in enumerate(frames):
+      filmstrip[:, i * frames.shape[1] : i * frames.shape[1] + frames.shape[2], :] = f
   return filmstrip.squeeze(0)
 
 # generate image of phasegram and frames
@@ -267,6 +273,42 @@ def video_phasegram_image(y_phasegram, yh_phasegram, frames, dims=(512, 2048)):
     fig.canvas.draw()
     # frame_plot = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
     # frame_plot = frame_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    plt.close()
+    return fig
+
+# generate image of attention and video frames
+def video_frames_image(y_attn, yh_attn, video, dims=(256, 4096)):
+
+    y_img = generate_filmstrip(y_attn, dims)
+    y_img = y_img.cpu().detach().numpy()
+
+    yh_img = generate_filmstrip(yh_attn, dims)
+    yh_img = yh_img.cpu().detach().numpy()
+
+    video = generate_filmstrip(video, dims)
+    video = video.cpu().detach().numpy()
+
+    fig=plt.figure(figsize=(7, 3))
+    plt.tight_layout()
+    plt.subplots_adjust(wspace=1)
+
+    plt.subplot(3,1,1)
+    plt.title("video frames")
+    plt.imshow(video)
+    plt.axis("off")
+
+    plt.subplots_adjust(wspace=1)
+    plt.subplot(3,1,2)
+    plt.title("Input Frames (y)")
+    plt.imshow(y_img)
+    plt.axis("off")
+
+    plt.subplot(3,1,3)
+    plt.title("Reconstructed Frames (ŷ)")
+    plt.imshow(yh_img)
+    plt.axis("off")
+
+    fig.canvas.draw()
     plt.close()
     return fig
 
