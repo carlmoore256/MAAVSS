@@ -33,7 +33,8 @@ class AV_Dataset():
                  max_clip_len=None,
                  gen_stft=True,
                  gen_video=True,
-                 wandb_run=None):
+                 wandb_run=None,
+                 trim_stft_end=True):
         
         self.gen_stft = gen_stft
         self.gen_video = gen_video
@@ -61,7 +62,7 @@ class AV_Dataset():
 
         self.autocontrast = autocontrast
         self.compress_audio = compress_audio
-
+        self.trim_stft_end = trim_stft_end
         self.backend = torchaudio.get_audio_backend()
 
         # filter out clips that are not 30 fps
@@ -140,7 +141,8 @@ class AV_Dataset():
                                               onesided=True)
       # fft size should = (..., 2, fft_len/2+1, num_frames * a)
       # remove extra bin as well as extra frame
-      spec = spec[:-1, :-1, :]
+      if self.trim_stft_end:
+        spec = spec[:-1, :-1, :]
 
       if self.use_polar:
         spec = torchaudio.functional.magphase(spec)
@@ -149,7 +151,10 @@ class AV_Dataset():
 
     def istft(self, stft):
       # remember to add back removed bins with padding
-      stft = F.pad(stft, (0, 1)).permute(2,1,0)
+      if self.trim_stft_end:
+        stft = F.pad(stft, (0, 1)).permute(2,1,0)
+      else:
+        stft = stft.permute(2,1,0)
       if self.use_polar:
         mag = stft[:, :, 0]
         phase = stft[:, :, 1]

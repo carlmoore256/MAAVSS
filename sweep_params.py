@@ -19,6 +19,9 @@ sweep_config = {
         },
         'activation': {
             'values': ['relu', 'tanh']
+        },
+        'objective_zeros': {
+            'values': [True, False]
         }
     }
 }

@@ -61,7 +61,7 @@ def train():
                                             shuffle=True,
                                             num_workers=0)
 
-      stft_shape = [config.batch_size, 2, config.num_fft_frames, config.fft_len//2]     
+      stft_shape = [config.batch_size, 2, config.num_fft_frames, config.fft_len//2 + 1]     
       attn_shape = [config.batch_size, 1, config.num_frames, config.framesize, config.framesize]
 
       x_stft_ex, _, attn_ex, _, _ = next(iter(train_gen))
@@ -185,7 +185,7 @@ def train():
                   
                   wandb.log({
                       "stft" : utilities.stft_ae_image_callback(y_stft[0], output_stft[0]),
-                      "attention_frames" : utilities.video_frames_image(attn_orig[0], output_attn[0], video[0]),
+                      "attention_frames" : utilities.video_frames_image(attn[0], output_attn[0], video[0]),
                       "audio_input" : wandb.Audio(dataset.istft(y_stft[0].cpu().detach()), sample_rate=16000),
                       "audio_output" : wandb.Audio(dataset.istft(output_stft[0].cpu().detach()), sample_rate=16000),
                       "latent_activation" : wandb.Histogram(latent)

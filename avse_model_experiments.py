@@ -345,32 +345,9 @@ class AV_Fusion_Model_Frames(nn.Module):
         self.latent_channels = latent_channels
         self.output_stft_frames = hops_per_frame
 
-        print(f'NUM FRAMES {frame_shape[2]}')
         modules = []
         in_ch = 1
 
-        # self.visual_encoder = nn.Sequential(
-        #   nn.Conv2d(1, 16, kernel_size=(5,5), stride=(2,2), padding=(2,2), bias=False),
-        #   nn.BatchNorm2d(16),
-        # #   nn.MaxPool2d((2, 2)),
-
-        #   nn.Conv2d(16, 32, kernel_size=(5,5), stride=(2,2), padding=(2,2), bias=False),
-        #   nn.BatchNorm2d(32),
-        # #   nn.MaxPool2d((2, 2)),
-
-        #   nn.Conv2d(32, 64, kernel_size=(5,5), stride=(2,2), padding=(2,2), bias=False),
-        #   nn.BatchNorm2d(64),
-        # #   nn.MaxPool2d((2, 2)),
-
-        #   nn.Conv2d(64, 64, kernel_size=(5,5), stride=(2,2), padding=(2,2), bias=False),
-        #   nn.BatchNorm2d(64),
-        # #   nn.MaxPool2d((2, 2)),
-
-        #   nn.Conv2d(64, latent_channels, kernel_size=(5,5), stride=(2,2), padding=(2,2), bias=False),
-        #   nn.BatchNorm2d(latent_channels),
-        # #   nn.MaxPool2d((2, 2))
-
-        # ).to("cuda")
         self.visual_encoder = nn.Sequential(
             nn.Conv3d(1, 8, kernel_size=(3,5,5), stride=(1,2,2), padding=(1,2,2), bias=False),
             nn.BatchNorm3d(8),
@@ -405,8 +382,6 @@ class AV_Fusion_Model_Frames(nn.Module):
         with torch.no_grad():
             x_v = self.visual_encoder(x_v)
 
-        print(f'\nXV SHAPE {x_v.shape}')
-
 
         ############### STFT ENCODER #################
 
@@ -415,6 +390,7 @@ class AV_Fusion_Model_Frames(nn.Module):
         spatial_dim = stft_shape[-1]
         temporal_dim = stft_shape[-2]
         output_shape = [temporal_dim, spatial_dim]
+        first_layer = True
 
         while output_shape != list(x_v.shape[2:]):
             out_ch = in_ch * 2
@@ -429,6 +405,11 @@ class AV_Fusion_Model_Frames(nn.Module):
                 stride[1] = 2
                 output_shape[1] = output_shape[1] // 2
 
+            padding = [1, 4]
+            if first_layer and spatial_dim % 2 == 1:
+              first_layer = False
+              padding[1] = 3
+              
             modules.append(nn.Conv2d(in_ch, out_ch, 
                                     kernel_size=(3, 9), 
                                     stride=tuple(stride), 
@@ -489,30 +470,39 @@ class AV_Fusion_Model_Frames(nn.Module):
         in_ch = latent_channels
         encoded_shape = [x_a.shape[2], x_a.shape[3]]
 
-        while encoded_shape != [temporal_dim, spatial_dim]:
-            out_ch = in_ch // 2
-            if out_ch < stft_shape[1]:
-                out_ch = stft_shape[1]
-            stride = [1, 1]
-            out_padding = [0, 0]
-            if encoded_shape[0] < temporal_dim:
-                stride[0] = 2
-                out_padding[0] = 1
-                encoded_shape[0] = encoded_shape[0] * 2
-            if encoded_shape[1] < spatial_dim:
-                stride[1] = 2
-                out_padding[1] = 1
-                encoded_shape[1] = encoded_shape[1] * 2
-            modules.append(nn.ConvTranspose2d(in_ch, out_ch, 
-                                    kernel_size=(3, 9), 
-                                    stride=tuple(stride), 
-                                    padding=(1,4),
-                                    output_padding=tuple(out_padding),
-                                    bias=False))
-            if encoded_shape != [temporal_dim, spatial_dim]:
-                modules.append(nn.BatchNorm2d(out_ch))
-                modules.append(nn.Tanh())
-            in_ch = out_ch
+        tensor = torch.rand(x_a.shape)
+        kernel_size = [3, 9]
+
+        while [tensor.shape[-2], tensor.shape[-1]] != [temporal_dim, spatial_dim]:
+          out_ch = in_ch // 2
+          if out_ch < stft_shape[1]:
+              out_ch = stft_shape[1]
+          stride = [1, 1]
+          out_padding = [0, 0]
+          if encoded_shape[0] < temporal_dim:
+              stride[0] = 2
+              out_padding[0] = 1
+              encoded_shape[0] = encoded_shape[0] * 2
+          if encoded_shape[1] < spatial_dim:
+              stride[1] = 2
+              out_padding[1] = 1
+              encoded_shape[1] = encoded_shape[1] * 2
+          layer = nn.ConvTranspose2d(in_ch, out_ch, 
+                                  kernel_size=tuple(kernel_size), 
+                                  stride=tuple(stride), 
+                                  padding=(1, 4),
+                                  output_padding=tuple(out_padding),
+                                  bias=False)
+          modules.append(layer)
+          tensor = layer(tensor)
+          kernel_size = [3, 9]
+          if tensor.shape[-1] == (spatial_dim-1)//2:
+            kernel_size[1] = 10
+          if [tensor.shape[-2], tensor.shape[-1]] != [temporal_dim, spatial_dim]:
+              modules.append(nn.BatchNorm2d(out_ch))
+              modules.append(nn.Tanh())
+          in_ch = out_ch
+
 
         self.stft_decoder = nn.Sequential(*modules)
 
