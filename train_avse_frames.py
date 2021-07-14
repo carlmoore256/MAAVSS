@@ -11,7 +11,7 @@ from run_config import model_args
 import torchvision.transforms.functional as TF
 
 
-if __name__ == "__main__":
+def train():
     args = model_args()
     with wandb.init(project='AV-Fusion-AVSE', entity='carl_m', config=args):
       config = wandb.config
@@ -26,8 +26,6 @@ if __name__ == "__main__":
           config.framerate, 
           config.samplerate
       )
-
-      preview_dims=(512, 4096)
       
       dataset = AV_Dataset(
           num_frames= config.num_seq + config.num_frames,
@@ -66,10 +64,8 @@ if __name__ == "__main__":
       stft_shape = [config.batch_size, 2, config.num_fft_frames, config.fft_len//2]     
       attn_shape = [config.batch_size, 1, config.num_frames, config.framesize, config.framesize]
 
-      x_stft_ex, _, attn_ex, audio_ex, video_ex = next(iter(train_gen))
+      x_stft_ex, _, attn_ex, _, _ = next(iter(train_gen))
       
-      a_zeros = torch.zeros_like(audio_ex).to(DEVICE)
-      v_zeros = torch.zeros_like(video_ex).to(DEVICE)
       stft_zeros = torch.zeros_like(x_stft_ex).to(DEVICE)
       attn_zeros = torch.zeros_like(attn_ex).to(DEVICE)
 
@@ -81,7 +77,6 @@ if __name__ == "__main__":
                           ).to(DEVICE)
 
       mse_loss = torch.nn.MSELoss()
-
       optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
 
       if config.saved_model != None:
@@ -94,11 +89,11 @@ if __name__ == "__main__":
       v_gen = iter(val_gen)
       last_loss = 1e5
 
-      train_mode = 0 # 0 = audio, 1 = visual, 2 = av
+      train_mode = 2 # 0 = audio, 1 = visual, 2 = av
       idx_middle_frame = (config.num_seq - 1) // 2
 
       try:
-        wandb.watch(model, torch.nn.functional.mse_loss, log="all", log_freq=100)
+        wandb.watch(model, torch.nn.functional.mse_loss, log="all", log_freq=300)
       except Exception as e:
         print(f'error with wandb.watch: {e}')
 
@@ -114,9 +109,14 @@ if __name__ == "__main__":
 
               x_stft, y_stft, attn, audio, video = next(t_gen)
               
+              y_attn = attn
+
               if train_mode == 0:
-                attn = attn_zeros
-                video = v_zeros
+                x_attn = attn_zeros
+                if config.objective_zeros:
+                    y_attn = attn_zeros
+              else:
+                x_attn = attn            
 
               if train_mode == 1:
                 x_stft = stft_zeros
@@ -125,33 +125,31 @@ if __name__ == "__main__":
 
               x_stft = x_stft.to(DEVICE)
               y_stft = y_stft.to(DEVICE)
-              attn = attn.to(DEVICE)
+              x_attn = x_attn.to(DEVICE)
+              y_attn = y_attn.to(DEVICE)
 
               if i % config.cb_freq == 0:
+                attn_orig = attn
                 stft_start = idx_middle_frame * config.hops_per_frame
                 stft_end = stft_start + (config.hops_per_frame * config.num_seq)
                 output_stft = torch.zeros_like(x_stft[:, :, stft_start:stft_end, :])
                 output_attn = torch.zeros_like(attn[:, :, idx_middle_frame:idx_middle_frame+config.num_seq, :])
 
               for j in range(config.num_seq):
-                if train_mode == 0:
-                    x_attn_batch = attn_zeros[:, :, j:j+config.num_frames, :]
-                else:
-                    x_attn_batch = attn[:, :, j:j+config.num_frames, :]
-                y_attn_batch = attn[:, :, j+idx_middle_frame, :]            
+
+                x_attn_batch = x_attn[:, :, j:j+config.num_frames, :]
+                y_attn_batch = y_attn[:, :, j+idx_middle_frame, :]            
 
                 stft_pos_start = config.hops_per_frame*j
                 stft_pos_end = stft_pos_start+(config.hops_per_frame * config.num_frames)
 
                 stft_pos_start_mid = stft_pos_start + (config.hops_per_frame * idx_middle_frame)
                 stft_pos_end_mid = stft_pos_start_mid + config.hops_per_frame
-                
 
                 x_stft_batch = x_stft[:, :, stft_pos_start:stft_pos_end, :]
                 y_stft_batch = y_stft[:, :, stft_pos_start_mid:stft_pos_end_mid, :]
 
                 yh_stft, yh_attn, latent = model(x_stft_batch, x_attn_batch)
-                # print(f'yh stft sh {yh_stft.shape} yh_attn {yh_attn.shape}')
 
                 a_loss = mse_loss(yh_stft, y_stft_batch)
                 v_loss = mse_loss(yh_attn, y_attn_batch)
@@ -161,7 +159,6 @@ if __name__ == "__main__":
                 loss.backward()
 
                 if i % config.cb_freq == 0:
-                    # output_stft[:, :, stft_pos_start_mid:stft_pos_end_mid, :] = yh_stft
                     stft_start_op = j*config.hops_per_frame
                     stft_end_op = stft_start_op + config.hops_per_frame
                     output_stft[:, :, stft_start_op:stft_end_op, :] = yh_stft
@@ -188,19 +185,11 @@ if __name__ == "__main__":
                   
                   wandb.log({
                       "stft" : utilities.stft_ae_image_callback(y_stft[0], output_stft[0]),
-                      "attention_frames" : utilities.video_frames_image(attn[0], output_attn[0], video[0]),
+                      "attention_frames" : utilities.video_frames_image(attn_orig[0], output_attn[0], video[0]),
                       "audio_input" : wandb.Audio(dataset.istft(y_stft[0].cpu().detach()), sample_rate=16000),
-                      "audio_output" : wandb.Audio(dataset.istft(output_stft[0].cpu().detach()), sample_rate=16000)
+                      "audio_output" : wandb.Audio(dataset.istft(output_stft[0].cpu().detach()), sample_rate=16000),
+                      "latent_activation" : wandb.Histogram(latent)
                   })
-
-
-              # if i % config.cb_freq == 0:
-              #     print(f'epoch {e} step {i}/{config.steps_per_epoch} loss {loss.sum()} a_loss {a_loss} v_loss {v_loss}')
-              #     stft_plot = utilities.stft_ae_image_callback(y_stft[0], yh_stft[0])
-              #     frame_plot = utilities.video_phasegram_image(
-              #         y_phasegram[0], yh_phasegram[0], attn[0], preview_dims)
-              #     wandb.log( {"frames": wandb.Image(frame_plot),
-              #                 "stft": wandb.Image(stft_plot)} )
           
           # model.eval()
           # avg_loss = 0
@@ -264,3 +253,6 @@ if __name__ == "__main__":
                                   config.cp_dir)
       if not args.no_save:
           utilities.save_model(f"saved_models/avf-v-ae-{wandb.run.name}.pt", model, overwrite=True)
+
+if __name__ == "__main__":
+    train()

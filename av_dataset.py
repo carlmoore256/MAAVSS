@@ -9,6 +9,7 @@ import random
 import utilities
 import os
 import torch.nn.functional as F
+import wandb
 
 class AV_Dataset():
 
@@ -31,7 +32,8 @@ class AV_Dataset():
                  data_path="./data/raw",
                  max_clip_len=None,
                  gen_stft=True,
-                 gen_video=True):
+                 gen_video=True,
+                 wandb_run=None):
         
         self.gen_stft = gen_stft
         self.gen_video = gen_video
@@ -88,10 +90,20 @@ class AV_Dataset():
           random.shuffle(all_vids)
 
         # if gen_video:
-        self.video_clips = utilities.extract_clips(all_vids[:10],
+        self.video_clips = utilities.extract_clips(all_vids[:],
                                               num_frames,
                                               frame_hop,
                                               None)
+
+        if wandb_run is not None:
+          artifact = wandb.Artifact(f"video-clips{num_frames}f-{frame_hop}h", type='dataset', metadata={
+            "num_frames" : num_frames,
+            "frame_hop" : frame_hop,
+            "num_clips" : len(self.video_clips.video_clips.video_paths)
+          })
+          with artifact.new_file('video_clips.obj') as f:
+            f.write(self.video_clips)
+          wandb_run.log_artifact(artifact)
 
         # self.audio_sample_len = int((samplerate/framerate) * num_frames)
         self.save_output_examples = False
@@ -223,7 +235,7 @@ class AV_Dataset():
       audio = self.get_audio(idx, info["video_fps"])
       y_stft = self.stft(audio)
       if self.normalize_output_fft:
-        y_stft *= 1/torch.max(torch.abs(y_stft))
+        y_stft *= 1/torch.max(torch.abs(y_stft) + 1e-7)
       # permute dims [n_fft, timesteps, channels] -> [channels, timesteps, n_fft]
       # timesteps now will line up with 3D tensor when its WxH are flattened
       y_stft = y_stft.permute(2, 1, 0)
@@ -249,7 +261,7 @@ class AV_Dataset():
       y_stft = self.stft(audio)
       y_stft = y_stft.permute(2, 1, 0)
       if self.normalize_output_fft:
-        y_stft *= 1/torch.max(torch.abs(y_stft))
+        y_stft *= 1/torch.max(torch.abs(y_stft) + 1e-7)
       x_stft = self.add_noise(y_stft)
       return x_stft, y_stft, audio
 

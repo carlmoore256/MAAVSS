@@ -560,6 +560,7 @@ class AV_Fusion_Model_Frames(nn.Module):
             # re-arrange dimensions so that time dim is properly arranged for lstm
             x_v = x_v.permute(0, 2, 1, 3)
             x_a = x_a.permute(0, 2, 1, 3)
+            print(f'x_v shape {x_v.shape} x_a {x_a.shape}')
             x_av_cat = torch.cat((x_v, x_a), dim=2)
             x_av_cat = torch.flatten(x_av_cat, start_dim=-2, end_dim=-1)
             av = self.lstm(x_av_cat)[0]

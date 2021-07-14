@@ -106,6 +106,7 @@ if __name__ == "__main__":
 
       train_mode = 1 # 0 = audio, 1 = visual, 2 = av
       idx_middle_frame = (config.num_seq - 1) // 2
+      torch.cuda.empty_cache()
 
       try:
         wandb.watch(model, torch.nn.functional.mse_loss, log="all", log_freq=100)

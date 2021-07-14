@@ -157,6 +157,9 @@ def extract_clips(all_vids, num_frames, frame_hop, framerate, cache_dir="clipcac
     os.mkdir(new_dir)
     save_cache_obj(os.path.join(new_dir, "video_clips.obj"), video_clips)
     save_cache_obj(os.path.join(new_dir, "clip_config.obj"), config)
+
+
+
     return video_clips
 
 def save_model(path, model, overwrite=False):
@@ -281,7 +284,13 @@ def video_phasegram_image(y_phasegram, yh_phasegram, frames, dims=(512, 2048)):
 
 # generate image of attention and video frames
 def video_frames_image(y_attn, yh_attn, video, dims=(256, 4096)):
-
+    y_attn *= 1/(torch.max(y_attn) + 1e-7)
+    y_attn = torch.clip(y_attn, 0., 1.)
+    yh_attn *= 1/(torch.max(yh_attn) + 1e-7)
+    yh_attn = torch.clip(yh_attn, 0., 1.)
+    video *= 1/(torch.max(video) + 1e-7)
+    video = torch.clip(video, 0., 1.)
+    
     y_img = generate_filmstrip(y_attn, dims, resize=False)
     y_img = y_img.cpu().detach().numpy()
 
