@@ -17,3 +17,4 @@ saved_models/*
 checkpoints/*
 !checkpoints/.gitkeep
 LitReview.txt
+images/filmstrips/*

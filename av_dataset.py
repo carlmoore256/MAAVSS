@@ -34,7 +34,8 @@ class AV_Dataset():
                  gen_stft=True,
                  gen_video=True,
                  wandb_run=None,
-                 trim_stft_end=True):
+                 trim_stft_end=True,
+                 return_video_path=False):
         
         self.gen_stft = gen_stft
         self.gen_video = gen_video
@@ -63,6 +64,8 @@ class AV_Dataset():
         self.autocontrast = autocontrast
         self.compress_audio = compress_audio
         self.trim_stft_end = trim_stft_end
+        self.return_video_path = return_video_path
+
         self.backend = torchaudio.get_audio_backend()
 
         # filter out clips that are not 30 fps
@@ -143,6 +146,8 @@ class AV_Dataset():
       # remove extra bin as well as extra frame
       if self.trim_stft_end:
         spec = spec[:-1, :-1, :]
+      else:
+        spec = spec[:, :-1, :]
 
       if self.use_polar:
         spec = torchaudio.functional.magphase(spec)
@@ -271,7 +276,9 @@ class AV_Dataset():
       return x_stft, y_stft, audio
 
     def gen_video_example(self, idx):
-      video, _, _, _, _ = self.video_clips.get_clip(idx)
+      video, _, _, vid_idx, clip_idx = self.video_clips.get_clip(idx)
+
+
       video = video.permute(0, 3, 1, 2).type(torch.float32)
       video = video / 255.
       video = self.transform(video)
@@ -282,7 +289,11 @@ class AV_Dataset():
       attn *= 1/torch.max(attn)
       video = video.permute(1, 0, 2, 3)
       attn = attn.permute(1,0,2,3)
-      return attn, video
+      # path return useful for getting file to do processing with
+      if self.return_video_path:
+        return attn, video, [self.video_clips.video_paths[vid_idx], clip_idx]
+      else:
+        return attn, video
 
     def __len__(self):
         return self.video_clips.num_clips()

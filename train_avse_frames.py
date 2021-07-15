@@ -44,7 +44,8 @@ def train():
           data_path=config.data_path,
           max_clip_len=config.max_clip_len,
           gen_stft=True,
-          gen_video=True
+          gen_video=True,
+          trim_stft_end=False
       )
 
       train_split = int(len(dataset)*config.split)
@@ -192,12 +193,22 @@ def train():
                   attn =  attn[:, :, idx_middle_frame:idx_middle_frame+config.num_seq, :]
                   video =  video[:, :, idx_middle_frame:idx_middle_frame+config.num_seq, :]
                   
+                  audio_input = dataset.istft(y_stft[0].cpu().detach()).unsqueeze(0)
+                  audio_output = dataset.istft(output_stft[0].cpu().detach()).unsqueeze(0)
+
+                  input_mag, input_phase = utilities.plot_waveform_specgram(audio_input, 16000)
+                  output_mag, output_phase = utilities.plot_waveform_specgram(audio_output, 16000)
+                  
+                    
                   wandb.log({
                       "stft" : utilities.stft_ae_image_callback(y_stft[0], output_stft[0]),
+                      "input_mag" : input_mag,
+                      "input_phase" : input_phase,
+                      "output_mag" : output_mag,
+                      "output_phase" : output_phase,
                       "attention_frames" : utilities.video_frames_image(attn[0], output_attn[0], video[0]),
-                      "audio_input" : wandb.Audio(dataset.istft(y_stft[0].cpu().detach()), sample_rate=16000),
-                      "audio_output" : wandb.Audio(dataset.istft(output_stft[0].cpu().detach()), sample_rate=16000),
-                      "latent_activation" : wandb.Histogram(latent)
+                      "audio_input" : wandb.Audio(audio_input.squeeze(0), sample_rate=16000),
+                      "audio_output" : wandb.Audio(audio_output.squeeze(0), sample_rate=16000),
                   })
           
           # model.eval()
