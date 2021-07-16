@@ -349,25 +349,30 @@ class AV_Fusion_Model_Frames(nn.Module):
         in_ch = 1
 
         self.visual_encoder = nn.Sequential(
-            nn.Conv3d(1, 8, kernel_size=(3,5,5), stride=(1,2,2), padding=(1,2,2), bias=False),
-            nn.BatchNorm3d(8),
-            # nn.MaxPool3d((1, 2, 2)),
-
-            nn.Conv3d(8, 16, kernel_size=(3,5,5), stride=(1,2,2), padding=(1,2,2), bias=False),
+            nn.Conv3d(1, 16, kernel_size=(3,5,5), stride=(1,1,1), padding=(1,2,2), bias=False),
             nn.BatchNorm3d(16),
-            # nn.MaxPool3d((1, 2, 2)),
+            nn.MaxPool3d((1, 2, 2)),
+            nn.LeakyReLU(),
 
-            nn.Conv3d(16, 32, kernel_size=(3,5,5), stride=(1,2,2), padding=(1,2,2), bias=False),
+            nn.Conv3d(16, 32, kernel_size=(3,5,5), stride=(1,1,1), padding=(1,2,2), bias=False),
             nn.BatchNorm3d(32),
-            # nn.MaxPool3d((1, 2, 2)),
+            nn.MaxPool3d((1, 2, 2)),
+            nn.LeakyReLU(),
 
-            nn.Conv3d(32, 64, kernel_size=(3,7,7), stride=(1,3,3), padding=(1,3,3), bias=False),
+            nn.Conv3d(32, 64, kernel_size=(3,5,5), stride=(1,1,1), padding=(1,2,2), bias=False),
             nn.BatchNorm3d(64),
-            # nn.MaxPool3d((1, 2, 2)),
+            nn.MaxPool3d((1, 2, 2)),
+            nn.LeakyReLU(),
 
-            nn.Conv3d(64, latent_channels, kernel_size=(3,7,7), stride=(1,3,3), padding=(1,3,3), bias=False),
+            nn.Conv3d(64, 64, kernel_size=(3,5,5), stride=(1,1,1), padding=(1,2,2), bias=False),
+            nn.BatchNorm3d(64),
+            nn.MaxPool3d((1, 3, 3)),
+            nn.LeakyReLU(),
+
+            nn.Conv3d(64, latent_channels, kernel_size=(3,5,5), stride=(1,1,1), padding=(1,3,3), bias=False),
             nn.BatchNorm3d(latent_channels),
-            # nn.MaxPool3d((1, 2, 2)),
+            nn.MaxPool3d((1, 3, 3)),
+            nn.LeakyReLU(),
             nn.Flatten(start_dim=-2, end_dim=-1)
         ).to("cuda")
 
@@ -433,7 +438,8 @@ class AV_Fusion_Model_Frames(nn.Module):
         fc2_out = 512
 
         # re-arrange dimensions so that time dim is properly arranged for lstm
-        x_av_cat = torch.cat((x_v.permute(0, 2, 1, 3), x_a.permute(0, 2, 1, 3)), dim=2)
+        # x_av_cat = torch.cat((x_v.permute(0, 2, 1, 3), x_a.permute(0, 2, 1, 3)), dim=2)
+        x_av_cat = torch.cat((x_v, x_a), dim=2)
         print(f'x_v {x_v.shape} x_a {x_a.shape} permuted {x_v.permute(0, 2, 1, 3).shape}')
         print(f'x_av_cat {x_av_cat.shape}')
 
@@ -546,17 +552,20 @@ class AV_Fusion_Model_Frames(nn.Module):
 
     def av_fusion_forward(self, x_a, x_v):
             # re-arrange dimensions so that time dim is properly arranged for lstm
-            x_v = x_v.permute(0, 2, 1, 3)
-            x_a = x_a.permute(0, 2, 1, 3)
-            print(f'x_v shape {x_v.shape} x_a {x_a.shape}')
+            # x_v = x_v.permute(0, 2, 1, 3)
+            # x_a = x_a.permute(0, 2, 1, 3)
             x_av_cat = torch.cat((x_v, x_a), dim=2)
             x_av_cat = torch.flatten(x_av_cat, start_dim=-2, end_dim=-1)
-            av = self.lstm(x_av_cat)[0]
+            self.lstm.flatten_parameters()
+            av, (hn, cn) = self.lstm(x_av_cat)
             av = torch.flatten(av, start_dim=1)
             av = self.fc1(av)
-            av = F.leaky_relu(av, negative_slope=0.3)
+            # av = F.leaky_relu(av, negative_slope=0.3)
+            av = F.tanh(av)
             av = self.fc2(av)
-            av = F.leaky_relu(av, negative_slope=0.3)
+            # av = F.leaky_relu(av, negative_slope=0.3)
+            av = F.tanh(av)
+
             return av
 
 
@@ -574,7 +583,8 @@ class AV_Fusion_Model_Frames(nn.Module):
         x_a_out = F.tanh(x_a_out)
 
         x_v_out = self.v_fc1(x_av_fused)
-        x_v_out = F.leaky_relu(x_v_out, negative_slope=0.3)
+        x_v_out = F.sigmoid(x_v_out)
+        # x_v_out = F.leaky_relu(x_v_out, negative_slope=0.3)
 
         x_v_out = x_v_out.view(x_v.shape[0], self.frame_channels, self.frame_shape[-2], self.frame_shape[-1])
         x_a_out = x_a_out.view(x_a.shape[0], 2, self.output_stft_frames, x_a.shape[-1])

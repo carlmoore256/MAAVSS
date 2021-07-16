@@ -410,5 +410,14 @@ def plot_waveform_specgram(waveform, sample_rate, title="Spectrogram", xlim=None
     if xlim:
       axes[c].set_xlim(xlim)
   figure_phase.suptitle("phase (unwrapped)")
-
+  figure_mag.canvas.draw()
+  figure_phase.canvas.draw()
+  plt.close()
   return figure_mag, figure_phase
+
+# returns true if all provided files exist
+def verify_files(files):
+  for f in files:
+    if not os.path.isfile(f):
+      return False
+  return True

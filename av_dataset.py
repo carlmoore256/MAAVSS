@@ -10,6 +10,7 @@ import utilities
 import os
 import torch.nn.functional as F
 import wandb
+from PIL import Image
 
 class AV_Dataset():
 
@@ -24,6 +25,7 @@ class AV_Dataset():
                  hops_per_frame=8,
                  noise_std=0.01,
                  use_polar=False, 
+                 attn_diff=False,
                  normalize_input_fft=True,
                  normalize_output_fft=True,
                  autocontrast=False,
@@ -35,7 +37,8 @@ class AV_Dataset():
                  gen_video=True,
                  wandb_run=None,
                  trim_stft_end=True,
-                 return_video_path=False):
+                 return_video_path=False,
+                 attn_frames_path=None):
         
         self.gen_stft = gen_stft
         self.gen_video = gen_video
@@ -60,11 +63,29 @@ class AV_Dataset():
         self.hops_per_frame = hops_per_frame
         # self.center_fft = center_fft
         self.use_polar = use_polar
-
+        self.attn_diff = attn_diff # takes derivative of attention frames
         self.autocontrast = autocontrast
         self.compress_audio = compress_audio
         self.trim_stft_end = trim_stft_end
         self.return_video_path = return_video_path
+        self.attn_frames_path = attn_frames_path
+
+        self.cache_ratio = [0, 0]
+        # if attn_frames_path is not None:
+        #   self.all_attn_frames = {}
+        #   all_frames = utilities.get_all_files(attn_frames_path, "jpg")
+        #   for f in all_frames:
+        #     subdir_name = os.path.split(os.path.split(f)[0])[-1]
+        #     print(subdir_name)
+        #     self.all_attn_frames[subdir_name] = {
+        #       f,
+
+        #     }
+        self.imgLoadTransforms = pt_transforms.Compose([
+          pt_transforms.ToTensor(),
+          pt_transforms.Grayscale()
+        ])
+
 
         self.backend = torchaudio.get_audio_backend()
 
@@ -124,6 +145,9 @@ class AV_Dataset():
           self.vc_path_idxs = []
           for i, p in enumerate(vc_paths):
             self.vc_path_idxs.append(self.mmp_paths.index(p))
+
+    def get_cache_ratio(self):
+      return self.cache_ratio[0]/(self.cache_ratio[0]+self.cache_ratio[1])
 
     # change the output of the dataset between audio, video, and av
     def toggle_dataset_mode(self, a, v):
@@ -223,6 +247,41 @@ class AV_Dataset():
       audio = self.get_audio(idx, info["video_fps"])
       return video, audio, info["video_fps"], self.samplerate
 
+    # method for faster loading - get video frames from already existing attn frames
+    def get_frames_cached(self, idx):
+      video_idx, clip_idx = self.video_clips.get_clip_location(idx)
+      video_path = self.video_clips.video_paths[video_idx]
+      video_name = os.path.split(video_path)[-1][:-4]
+      folder_path = os.path.join(self.attn_frames_path, video_name)
+      true_idx = self.frame_hop * clip_idx
+      img_paths = [os.path.join(folder_path, f'img_{i+true_idx:05d}.jpg') for i in range(self.num_frames)]
+      attn = torch.zeros(1, self.num_frames, 256, 256)
+      if utilities.verify_files(img_paths):
+        self.cache_ratio[0] += 1
+        attn = torch.zeros(1, self.num_frames, 256, 256)
+        video = torch.zeros(3, self.num_frames, 256, 256)
+
+        for i, path in enumerate(img_paths):
+          img = Image.open(path)
+          attn[:, i, :, :] = self.imgLoadTransforms(img)
+        
+        if self.attn_diff:
+          attn = torch.diff(attn, )
+      else: # generate the attention map
+        self.cache_ratio[1] += 1
+        attn, video = self.gen_video_example(idx)
+        # cache files for later useage
+        for i in range(attn.shape[1]):
+          path = img_paths[i]
+          frame = attn[:, i, :, :].repeat(3, 1, 1)
+          torchvision.utils.save_image(frame, path)
+      return attn, video
+
+    def gen_av_example_cached(self, idx):
+      attn, video = self.get_frames_cached(idx)
+      x_stft, y_stft, audio = self.gen_stft_example(idx)
+      return x_stft, y_stft, attn, audio, video
+
     def get_audio(self, idx, fps):
       video_idx, clip_idx = self.video_clips.get_clip_location(idx)
       seconds_start = (clip_idx * self.frame_hop) / fps
@@ -242,16 +301,17 @@ class AV_Dataset():
 
     def gen_av_example(self, idx):
       video, _, info, video_idx, clip_idx = self.video_clips.get_clip(idx)
-      audio = self.get_audio(idx, info["video_fps"])
-      y_stft = self.stft(audio)
-      if self.normalize_output_fft:
-        y_stft *= 1/torch.max(torch.abs(y_stft) + 1e-7)
-      # permute dims [n_fft, timesteps, channels] -> [channels, timesteps, n_fft]
-      # timesteps now will line up with 3D tensor when its WxH are flattened
-      y_stft = y_stft.permute(2, 1, 0)
-      # new dimensionality: time dimension will match video time dim
-      # y_stft = y_stft.permute(1,0,2)
-      x_stft = self.add_noise(y_stft)
+      # audio = self.get_audio(idx, info["video_fps"])
+      # y_stft = self.stft(audio)
+      # if self.normalize_output_fft:
+      #   y_stft *= 1/torch.max(torch.abs(y_stft) + 1e-7)
+      # # permute dims [n_fft, timesteps, channels] -> [channels, timesteps, n_fft]
+      # # timesteps now will line up with 3D tensor when its WxH are flattened
+      # y_stft = y_stft.permute(2, 1, 0)
+      # # new dimensionality: time dimension will match video time dim
+      # # y_stft = y_stft.permute(1,0,2)
+      # x_stft = self.add_noise(y_stft)
+      x_stft, y_stft, audio = self.gen_stft_example(idx)
       video = video.permute(0, 3, 1, 2).type(torch.float32)
       video = video / 255.
       video = self.transform(video)
@@ -277,8 +337,6 @@ class AV_Dataset():
 
     def gen_video_example(self, idx):
       video, _, _, vid_idx, clip_idx = self.video_clips.get_clip(idx)
-
-
       video = video.permute(0, 3, 1, 2).type(torch.float32)
       video = video / 255.
       video = self.transform(video)
@@ -301,7 +359,10 @@ class AV_Dataset():
     def __getitem__(self, idx):
       
       if self.gen_stft and self.gen_video:
-        return self.gen_av_example(idx)
+        if self.attn_frames_path is not None:
+          return self.gen_av_example_cached(idx)
+        else:
+          return self.gen_av_example(idx)
       
       if self.gen_stft and not self.gen_video:
         return self.gen_stft_example(idx)

@@ -87,7 +87,7 @@ if __name__ == "__main__":
     # torchvision.utils.save_image(filmstrip_combined, os.path.join(output_dir, f"{subdir}_{clips_start[rand_clip_idx]}_filmstrip_frames.jpg"))
     # torchvision.utils.save_image(filmstrip_attn, os.path.join(output_dir, f"{subdir}_{clips_start[rand_clip_idx]}_filmstrip.jpg"))
     # torchvision.utils.save_image(filmstrip_video.permute(2,0,1), os.path.join(output_dir, f"{subdir}_{clips_start[rand_clip_idx]}_video_raw.jpg"))
-    
+    print(image_tensor.shape)
     diff = torch.diff(image_tensor, dim=1)
     diff_filmstrip = utilities.generate_filmstrip(diff, dims=None, resize=False)
 

@@ -36,6 +36,7 @@ def train():
           hops_per_frame=config.hops_per_frame,
           noise_std=config.noise_scalar,
           use_polar = config.use_polar,
+          attn_diff=config.attn_diff,
           normalize_input_fft = config.normalize_fft,
           normalize_output_fft = config.normalize_output_fft,
           autocontrast=config.autocontrast,
@@ -45,7 +46,8 @@ def train():
           max_clip_len=config.max_clip_len,
           gen_stft=True,
           gen_video=True,
-          trim_stft_end=False
+          trim_stft_end=False,
+          attn_frames_path="E:/MUSICES_ATTN/train"
       )
 
       train_split = int(len(dataset)*config.split)
@@ -182,7 +184,8 @@ def train():
                   "loss" : loss,
                   "a_loss" : a_loss,
                   "v_loss" : v_loss,
-                  "mode" : train_mode
+                  "mode" : train_mode,
+                  "cache_ratio" : dataset.get_cache_ratio()
               })
 
               if i % config.cb_freq == 0:
@@ -263,8 +266,14 @@ def train():
 
           # multi-input training scheme - switch between training modes
           if e % config.mode_freq == 0:
-              train_mode += 1
-              train_mode %= 3
+            train_mode += 1
+            train_mode %= 3
+            # if train_mode == 0:
+            #     dataset.toggle_dataset_mode(True, False)
+            # if train_mode == 1:
+            #     dataset.toggle_dataset_mode(False, True)
+            # if train_mode == 2:
+            #     dataset.toggle_dataset_mode(True, True)
           
           utilities.save_checkpoint(model.state_dict(), 
                                   optimizer.state_dict(),
