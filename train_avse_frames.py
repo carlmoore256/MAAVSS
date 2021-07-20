@@ -214,66 +214,10 @@ def train():
                       "audio_output" : wandb.Audio(audio_output.squeeze(0), sample_rate=16000),
                   })
           
-          # model.eval()
-          # avg_loss = 0
-
-          # # validation
-          # for i in range(config.val_steps):
-          #     x_stft_v, y_stft_v, attn_v, audio_v, video_v = next(v_gen)
-          #     x_stft_v = x_stft_v.to(DEVICE)
-          #     y_stft_v = y_stft_v.to(DEVICE)
-          #     attn_v = attn_v.to(DEVICE)
-          #     with torch.no_grad():
-          #         y_pgram_v = utilities.video_phasegram(attn_v, 
-          #                 resize=(config.p_size, config.p_size),
-          #                 diff=True,
-          #                 cumulative=True)
-          #         y_pgram_v = y_pgram_v.to(DEVICE)
-          #         yh_stft_v, yh_pgram_v, av_fused_v = model(x_stft_v, y_pgram_v)
-          #         # print(f"yh_stft_v {yh_stft_v.device} y_stft_v {y_stft_v.device}")
-          #         a_loss_val = mse_loss(yh_stft_v, y_stft_v.to(DEVICE))
-          #         v_loss_val = mse_loss(yh_pgram_v, y_pgram_v)
-          #         val_loss = a_loss_val + v_loss_val
-          #     avg_loss += val_loss
-          #     wandb.log({ "val_loss": val_loss,
-          #                 "val_loss_stft":a_loss_val,
-          #                 "val_loss_phasegram":v_loss_val })
-
-          # avg_loss /= config.val_steps
-
-          # if avg_loss < last_loss and e > 0:
-          #     if not args.no_save:
-          #         utilities.save_checkpoint(model.state_dict(), 
-          #                                 optimizer.state_dict(),
-          #                                 e, avg_loss,
-          #                                 wandb.run.name,
-          #                                 config.cp_dir)
-          # last_loss = avg_loss
-          
-          # frame_plot = utilities.video_phasegram_image(
-          #     y_pgram_v[0], yh_pgram_v[0], attn_v[0], preview_dims)
-          # stft_plot = utilities.stft_ae_image_callback(y_stft_v[0], yh_stft_v[0])
-          # p_audio = dataset.istft(yh_stft_v[0].cpu().detach())
-          # latent_plot = utilities.latent_fusion_image_callback(av_fused_v[0].cpu().detach().numpy())
-
-          # wandb.log( {
-          #     "video_frames_val": wandb.Image(frame_plot),
-          #     "stft_frames_val": wandb.Image(stft_plot),
-          #     "latent_plot": wandb.Image(latent_plot),
-          #     "audio_target": wandb.Audio(audio_v[0], sample_rate=config.samplerate),
-          #     "audio_output": wandb.Audio(p_audio, sample_rate=config.samplerate)
-          # } )
 
           # multi-input training scheme - switch between training modes
           if e % config.mode_freq == 0:
-            train_mode += 1
-            train_mode %= 3
-            # if train_mode == 0:
-            #     dataset.toggle_dataset_mode(True, False)
-            # if train_mode == 1:
-            #     dataset.toggle_dataset_mode(False, True)
-            # if train_mode == 2:
-            #     dataset.toggle_dataset_mode(True, True)
+            train_mode = np.random.randint(0,2)
           
           utilities.save_checkpoint(model.state_dict(), 
                                   optimizer.state_dict(),
