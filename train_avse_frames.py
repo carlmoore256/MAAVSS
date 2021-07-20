@@ -2,7 +2,7 @@ from random import sample
 import torch
 from torch.utils import data
 from av_dataset import AV_Dataset
-from avse_model_experiments import AV_Fusion_Model_Frames
+from avse_model_final import AV_Fusion_Model_Frames
 import matplotlib.pyplot as plt
 import numpy as np
 import wandb
