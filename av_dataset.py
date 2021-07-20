@@ -319,6 +319,12 @@ class AV_Dataset():
         video = pt_transforms.functional.autocontrast(video)
       # get the video's attention map using DINO model
       attn = self.attention_extractor._inference(video)
+
+      if self.attn_diff:
+        pad = torch.zeros_like(attn[0:1])
+        attn = torch.diff(attn, dim=0)
+        attn = torch.cat((pad, attn), 0)
+
       attn *= 1/torch.max(attn)
       if self.save_output_examples:
         self.save_example(attn, audio, video, info["video_fps"], self.samplerate, idx)

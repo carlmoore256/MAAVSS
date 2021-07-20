@@ -313,12 +313,12 @@ def video_frames_image(y_attn, yh_attn, video, dims=(256, 4096)):
 
     plt.subplot(3,1,2)
     plt.title("Input Frames (y)")
-    plt.imshow(y_img)
+    plt.imshow(y_img, vmin=-1, vmax=1)
     plt.axis("off")
 
     plt.subplot(3,1,3)
     plt.title("Reconstructed Frames (ŷ)")
-    plt.imshow(yh_img)
+    plt.imshow(yh_img, vmin=-1, vmax=1)
     plt.axis("off")
 
     fig.canvas.draw()
